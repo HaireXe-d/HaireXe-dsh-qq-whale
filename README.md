@@ -1,8 +1,8 @@
 # dsh-qq-whale
 
-> 养鱼的 QQ 通道。跟 [dsh-bili-whale](../dsh-bili-whale) 可以**同时开**，也能**单独关**。
+> 养鱼的 QQ 通道。跟 [dsh-bili-whale](../dsh-bili-whale)即哔站养鱼 可以**同时开**，也能**单独关**。
 >
-> 依赖 [dsh-whale-core](../whale-core) 提供通道框架。
+> 依赖 [dsh-whale-core](../whale-core)即总控制台 提供通道框架。
 
 > ## 🆕 2026-11-04 更新：QQ 可以独立用了
 >
