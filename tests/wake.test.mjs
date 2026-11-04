@@ -18,7 +18,7 @@ function stubController({ fail = false } = {}) {
 
 const msg = (id, text) => ({ userId: '3546626108951012', messageId: id, nickname: '主人', text })
 
-test('收到一条私信 → 投进会话，内容是「谁说了什么」', async () => {
+test('收到一条私信 → 投进会话，内容是「谁说了什么」，并带上完整人设和日记指引', async () => {
   const c = stubController()
   const w = createQqWaker({ controller: c, dshHome: tmp(), cwd: tmp(), persona: () => '我是邦邦', log: () => {} })
   const r = await w.deliver(msg(1, '在吗'))
@@ -27,7 +27,39 @@ test('收到一条私信 → 投进会话，内容是「谁说了什么」', asy
   const text = c.calls.prompt[0].content[0].text
   assert.match(text, /在吗/)
   assert.match(text, /QQ 私信/)
-  assert.match(text, /人设依据/)
+  // ⚠️ 2026-11-04：改成和 B 站 session-delivery 一样的语义 ——
+  //   首次投递带**完整人设正文**（不再是只指路），并追加日记恢复指引 ✓
+  assert.match(text, /我是邦邦/, '首次投递要带完整人设正文')
+  assert.match(text, /whale-diary\.md/, '要带日记恢复指引')
+  assert.match(text, /whale-diary-private\.md/)
+})
+
+test('第二次投递：人设正文不再重复（省上下文），但人设依据还在', async () => {
+  const c = stubController()
+  // ⚠️ 要显式打开 personaOncePerSession —— 只有「每会话只注入一次」时才省略正文。
+  //   关着的话每条都带完整人设（和 B 站原来的默认一致）✓
+  const w = createQqWaker({
+    controller: c, dshHome: tmp(), cwd: tmp(),
+    persona: () => '我是邦邦',
+    config: () => ({ personaOncePerSession: true }),
+    log: () => {},
+  })
+  await w.deliver(msg(1, '在吗'))
+  await w.deliver(msg(2, '还在吗'))
+  const second = c.calls.prompt[1].content[0].text
+  assert.doesNotMatch(second, /^我是邦邦$/m, '第二次不该再重复整段人设')
+  assert.match(second, /人设依据/, '但要告诉她人设在哪，缺了自己重读')
+  assert.match(second, /还在吗/)
+})
+
+test('人设改了 → 下一次投递重新注入完整人设', async () => {
+  const c = stubController()
+  let persona = '我是邦邦'
+  const w = createQqWaker({ controller: c, dshHome: tmp(), cwd: tmp(), persona: () => persona, log: () => {} })
+  await w.deliver(msg(1, '一'))
+  persona = '我现在叫阿鱼'                 // 人设改了
+  await w.deliver(msg(2, '二'))
+  assert.match(c.calls.prompt[1].content[0].text, /我现在叫阿鱼/, '人设变了必须重新注入')
 })
 
 test('同一条消息投两次：第二次跳过（别让她说两遍）', async () => {

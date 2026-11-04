@@ -1,390 +1,463 @@
 # dsh-qq-whale
 
-> **养鱼 · QQ** —— 让 DSH 里的她通过 QQ 陪你聊天、发动态、发语音、存表情包。
-> 支持**扫码登录**，和 B站 那边是**同一条鱼**（同一本日记、同一个人设）。
+> 养鱼的 QQ 通道。跟 [dsh-bili-whale](../dsh-bili-whale) 可以**同时开**，也能**单独关**。
+>
+> 依赖 [dsh-whale-core](../whale-core) 提供通道框架。
 
-```
-       一条鱼
-（同一份日记、同一份人设、同一段记忆）
-       ├─ 入口：B 站  ← dsh-bili-whale
-       └─ 入口：QQ    ← 本仓库
-```
+> ## 🆕 2026-11-04 更新：QQ 可以独立用了
+>
+> 主人：「QQ养鱼如果独立出来用好像做不到哔站养鱼的效果，像作息、人格、醒来时间设置啥的，
+> 你照着哔站养鱼的功能改好」
+>
+> **以前 QQ 只有一个被动反应**：收到消息就把话投给她。她不会自己想起主人，
+> 也就是没有「作息」——那不叫养鱼，叫对话框。
+>
+> 这一版补齐了这些，全部对齐 B 站：
+>
+> | 补上的能力 | 原来 | 现在 |
+> |---|---|---|
+> | **作息（几点醒）** | ❌ 完全没有 | ✅ `night.windows` 时段，支持跨零点 |
+> | **定时醒来** | ❌ 只回消息 | ✅ 每分钟检查，到点自己醒 |
+> | **主动找你** | ❌ 从不主动 | ✅ `proactive.chance`，有每日上限 |
+> | **人格注入** | ⚠️ 只说"人设在哪" | ✅ 首次带**完整人设正文**，改了就重新注入 |
+> | **日记恢复** | ❌ 不提日记 | ✅ 醒来时带日记恢复指引 |
+> | **会话轮换** | ❌ 一条道走到黑 | ✅ 按自然日换新对话，旧的不删 |
+> | **口味** | ❌ 没有 | ✅ `preferences.like/dislike` |
+>
+> **总控制台现在只管「用 QQ 还是哔站」**：私聊归谁、动态归谁、入口开没开。
+> 她是谁、几点醒、怎么说话，全部回到本插件的设置页 —— 两处不再打架。
+>
+> 新增模块：`lib/schedule.js`（作息，纯函数可测）、`lib/proactive.js`（主动 + 人格注入）
+>
+> ---
+>
+> ## 安装
+>
+> ```
+> git clone https://github.com/HaireXe-d/dsh-qq-whale
+> cd dsh-qq-whale
+> node install.mjs
+> ```
+>
+> 前置：需要 [NapCat](https://github.com/NapNeko/NapCatQQ)（一键装：
+> [dsh-qq-whale-setup](https://github.com/HaireXe-d/dsh-qq-whale-setup)）
+>
+> ---
 
----
+## 它做什么
 
-## 目录
+- 收主人的 QQ 私信，投给会话
+- 发私信（一条一行 = 一条消息，跟 B 站那边同一个规矩）
+- 戳一戳（可选，默认关）
+- 安静时段：只收不发
 
-- [长什么样](#长什么样)
-- [装之前要知道的](#装之前要知道的)
-- [安装（三步）](#安装三步)
-- [用起来](#用起来)
-- [功能详解](#功能详解)
-- [和 B站 共用什么](#和-b站-共用什么)
-- [总控制台](#总控制台)
-- [NapCat 那四个字段是什么](#napcat-那四个字段是什么)
-- [常见问题](#常见问题)
-- [技术选型](#技术选型)
+## 它不做什么
 
----
-
-## 长什么样
-
-DSH 设置里多出两节：
-
-- **「养鱼 · QQ」** —— QQ 自己的设置（登录、账号、收发、语音、表情包、待审）
-- **「养鱼」** —— 总控制台（和 B站 一起管，需要装 `dsh-whale-core`）
-
----
-
-## 装之前要知道的
-
-### 必须有 NapCat
-
-QQ 这边**不能直接连 QQ**，必须经过 [NapCat](https://github.com/NapNeko/NapCatQQ) ——
-一个基于 QQNT 的 **OneBot 11** 实现。它要接管 QQ 进程才能收发消息。
-
-> 普通 QQ 客户端不行。NapCat 是单独的东西，要单独装、单独跑。
-
-**一键装 NapCat**（推荐）：
-
-```
-git clone https://github.com/HaireXe-d/dsh-qq-whale-setup
-cd dsh-qq-whale-setup
-windows\install-napcat.bat
-```
-
-它会自动下载 NapCat、**钉死 WebUI 密码**、开好 OneBot 接口、设开机自启。
-装完自检：`powershell -File windows\check.ps1`（七项全绿即可）
-
-> **为什么要「钉死密码」**：NapCat 有安全策略，会把看起来像默认值的 WebUI 密码
-> **自动换成随机串**。不钉住的话，每次重启 DSH 都认证失败 ——
-> 这就是很多人第一次配 QQ 卡住的地方。
-
-### 需要 DSH
-
-DeepSeek Harness（桌面版）。本插件是它的一个 profile 插件。
+- **不碰 QQ 客户端本体**。它只跟本地一个 OneBot 11 服务说话 ✓
+- 不管登录。扫码/登录都是 NapCat 那边的事，我不碰主人的账号密码 ✗
 
 ---
 
-## 安装（三步）
+## 这一页和「养鱼 · B站」长得一样（2026-11-04）
 
-### 1. 装 NapCat
+主人：「养鱼QQ的控制台怎么和哔站养鱼的不一样」。
 
-见上面 —— 或者跳过，你已经有了也行。
+改之前 QQ 那页是一堆圆角卡片、字段散在各处；B 站那页虽然老，但排版是一致的。
+现在 QQ 这页照 B 站那套重做了：
 
-### 2. 装插件
-
-```
-git clone https://github.com/HaireXe-d/dsh-qq-whale
-cd dsh-qq-whale
-node install.mjs
-```
-
-`install.mjs` 会：
-
-- 检查有没有 `dsh-whale-core`（总控制台框架，**可选**）
-- 把本包放到 `~/.dsh/plugins/dsh-qq-whale`
-- 登记进 DSH 的 desktop profile
-- 建好链接
-
-### 3. 重启 DSH
-
-**完整退出**（托盘图标也要退），再启动。
-
----
-
-## 用起来
-
-### 第一次
-
-1. 双击 `C:\NapCat\start-napcat.bat` 启动 NapCat（约 20–30 秒）
-2. DSH → 设置 →「**养鱼 · QQ**」→ 点「**扫码登录**」
-3. 手机 QQ 扫一下，在手机上确认
-4. 「我登录的 QQ 号」会自动填上
-5. 再填「**主人的 QQ 号**」（只有这个号发的消息才算主人，别人的进待审）
-6. 去 设置 →「养鱼」把 QQ 入口打开
-
-### 之后
-
-只要 NapCat 和 DSH 在跑，她自己会工作。
-
----
-
-## 功能详解
-
-### 扫码登录
-
-```
-点「扫码登录」→ 插件向 NapCat WebUI 要二维码 → 浏览器显示
-              → 隔 2 秒问一次状态 → 手机扫完确认 → 成功
-```
-
-- 二维码约 3 分钟有效，过期可以「重新生成」
-- 登录成功后自动把 QQ 号、昵称记进配置
-- **不需要在 DSH 里填什么密码** —— 已经和 NapCat 对齐好了
-- 也可以直接打开 `http://127.0.0.1:6099/webui?token=napcat_webui` 在那边扫
-
-> 失败时不再只显示「出错了」，会写清楚真实原因（连不上 / token 不对 / 二维码过期）。
-
-### 私聊
-
-**收**：插件定期问 NapCat 有没有新消息（默认 8 秒一次，可调）。
-
-**回**：她写回复到文件，插件读文件来发。
-
-| 配置 | 默认 | 说明 |
+| | B 站页 | QQ 页 |
 |---|---|---|
-| `listen.intervalSec` | 8 | 多久查一次（2–60 秒，越小越灵敏） |
-| `listen.backoffMaxSec` | 180 | 连不上时最多退到多久（10–900 秒） |
-| `reply.maxLines` | 6 | 一次最多发几条（一行 = 一条消息） |
-| `reply.maxChars` | 600 | 单条最多几个字，太长会切 |
-| `reply.gapMs` | 1200 | 多条之间停多久（太快像机器人） |
+| 类名前缀 | `blw-` | `blwq-`（**同样的值**，所以看起来一样） |
+| 结构 | 标题 → 分组 → 行 → 底部按钮 | 一模一样 |
+| 行 | 左边中文名+说明，右边控件 | 一模一样 |
+| 输入框 | `.blw-input` / `.blw-wide` | `.blwq-input` / `.blwq-wide`，同尺寸 |
+| 底部 | 保存 / 依赖体检 / 重新读取 | 一模一样 |
 
-**连续发多条**：她把回复写成多行，一行就是一条消息，中间自动停顿。
+**分组**（照 B 站「她是谁 / 你（主人）/ 口味 / 作息…」的写法）：
 
-### 待审：别人说的话先给你过目
+1. 我是谁、你是谁
+2. 扫码登录（专门块）
+3. 待审（专门块）
+4. 连 NapCat
+5. 收消息
+6. 她怎么回话
+7. 发什么（文字 / 语音 / 表情包）
+8. 语音（含试听和导入）
+9. 戳一戳
+10. 叫醒她用哪个对话
 
-**这是 QQ 侧最特别的保护。**
+页名也统一了：「养鱼 · B站」「养鱼 · QQ」（之前是「B站详细」「QQ详细」，更绕）。
 
-规则很简单：
+字段是**数据驱动**的（`FIELDS` 数组），加一项只改那个数组 —— 跟 B 站页同一个写法。
 
-- **主人**（`owner.uin`）发的话 → 直接当她收到
-- **别人**发的话 → 先躺进待审队列，**你点头才回**
+---
 
-界面上：
+## 我是谁、你是谁（2026-11-04）
 
-```
-待审（别人发来的话，你点头才回）
-  [头像] 昵称 · 12:34
-  「今天那个视频好好笑」
-  [回了] [改一下再回] [不理]
-```
+跟 B 站那边对齐，两个号都要存：
 
-### 发什么方式（文字 / 语音 / 表情包）
-
-她会自己挑用哪种方式说话：
-
-| 模式 | 说明 |
+| 字段 | 是什么 |
 |---|---|
-| `auto` | 按权重随机挑（默认 文字 8 : 语音 1 : 表情包 1） |
-| `pinned` | 固定成一种 |
+| `self.uin` / `self.nickname` | **她登录的 QQ 号**（扫码登录成功时自动记；也可以点「从 NapCat 读一次」） |
+| `owner.uin` / `owner.nickname` | **你的 QQ 号**（在通道配置里填，或者收到你消息时自动记昵称） |
 
-**临时指定**：你说「发语音」，她在接下来 `overrideTtlSec`（默认 300 秒）内都用语音。
+- 接口：`GET /channels/qq/accounts`（看）、`POST /channels/qq/accounts/refresh`（从 NapCat 读一次自己是谁）
+- 界面：「设置 → 养鱼 · QQ详细」最上面的 **我是谁、你是谁**
+- `owner.uin` 决定「谁算主人」—— 别人的话走待审 ✗
+- **密码 / token 不在这两个接口里回显**（有用例盯着）
 
-| 配置 | 默认 | 说明 |
-|---|---|---|
-| `format.mode` | auto | auto / pinned |
-| `format.pinned` | text | pinned 时固定发哪种 |
-| `format.overrideTtlSec` | 300 | 你临时指定管多久（30–3600 秒） |
-| `format.weights.text` | 8 | 文字权重（0–20） |
-| `format.weights.voice` | 1 | 语音权重（0 就少发语音，但你要她还是会发） |
-| `format.weights.sticker` | 1 | 表情包权重 |
+---
 
-#### 语音
+## 运行时真的按规则走（2026-11-04）
 
-| 配置 | 默认 | 说明 |
-|---|---|---|
-| `voice.enabled` | true | 开不开 |
-| `voice.engine` | tts | tts（系统朗读）/ file（自备音频） |
-| `voice.voice` | Microsoft Huihui Desktop | 用哪个系统语音 |
-| `voice.rate` / `volume` | 0 / 100 | 语速、音量 |
-| `voice.maxChars` | 120 | 超过就转成文字 |
+之前的坑：`shared.json` 里写「私聊给 QQ」，可**调度器运行时不看它** ——
+规则只有控制台看得见，两边照样同时叫醒她 ✗
 
-#### 表情包
+现在 QQ 通道收信前先问一句「该不该我说话」（`lib/runtime-rules.js`）：
 
-| 配置 | 默认 | 说明 |
-|---|---|---|
-| `sticker.enabled` | true | 开不开 |
-| `sticker.perDay` | 1 | 一天最多存几个 |
-| `sticker.maxBytes` | 8 MB | 多大以内才存 |
-| `sticker.sendChance` | 0.15 | 挑中表情包的权重 |
+- 私聊不在 QQ → 收到也**不叫醒**，只记日志（消息不丢，还留在 OneBot 历史里）
+- 改配置**立刻生效**，不用重启 ✓
+- 读不到规则 → **按允许处理**（不能因为读不到配置就把自己关死）
 
-### 我是谁、你是谁
+---
 
-和 B站 那边对齐：
+## 收到私信会叫醒她（2026-11-04 补的最后一块）
 
-| 字段 | 谁填 |
+之前 QQ 收到消息只写日志，人还是哑的。现在：
+
+```
+私信进来 → shouldAutoReply 判断
+   ├─ 主人自己 → controller.prompt({ sessionId, mode:'queue', content:[…] })
+   └─ 别人     → 待审队列 + 提醒主人
+```
+
+- 会话**沿用 B 站那个池子**（默认 `bili-whale`，配置里 `wake.sessionId` 可改）—— 不开新会话，否则两边记忆就断了 ✗
+- 投进去的内容带：人设路径提醒 + 「谁说了什么」+ 回话指引（`dm-reply-qq.txt`、`[语音]`/`[表情]` 标记）
+- **同一条只投一次**：按 `userId:messageId` 去重，状态落盘到 `qq-wake-state.json`，重启也不会重投 ✓
+- **投递失败不标记** → 下次轮询还能重来 ✓
+- `mode: 'queue'`：她正在干活就排队，不打断 ✓
+
+⚠️ 拿不到 `sessionController` 时**会明确记日志说「收得到消息但叫不醒她」**，不会安静地什么都不做。
+
+---
+
+## 发什么方式（2026-11-04 主人最后补的一条）
+
+主人：「主要是你想发就发，我主动提也可以选，也在控制台可调吧，大部分时候就停留在你自己选择的选项」。
+
+| 情况 | 谁决定 |
 |---|---|
-| `self.uin` / `self.nickname` | **自动**（登录成功后） |
-| `owner.uin` | **你填**（例如 `3546626108`） |
-| `owner.nickname` | 自动（收到主人消息时记） |
+| **平时** | 我自己挑 —— 按权重掷（文字 8 / 语音 1 / 表情包 1）✓ |
+| **他临时说一句**「发语音」「发个表情包」 | 这一次听他的；`format.overrideTtlSec`（默认 300 秒）后自动失效，**不改默认** |
+| **想固定住** | 控制台切 pinned，或者配置里 `format.mode = "pinned"` + `format.pinned` |
 
-还有个「**从 NapCat 读一次**」按钮 —— 不用扫码也能问一句「现在登的是哪个号」。
+配置：
 
-### 作息与主动
-
-| 配置 | 默认 | 说明 |
-|---|---|---|
-| `quietHours` | `[]` | 只收不发的时间段，例如 `[{from:'23:30',to:'07:00'}]` |
-| `poke.enabled` | false | 戳一戳（他不理我就戳一下，默认关，怕烦） |
-| `poke.afterMinutes` | 60 | 多久没回才戳 |
-| `wake.sessionId` | 空 | 叫醒她用哪个对话（默认跟 B站 共用，记忆才连得上） |
-
-> **作息和 B站 共用一套** —— 一条鱼不该有两个生物钟。
-> 具体几点醒在「养鱼 · B站」的「作息」里改。
-
-### 控制台全字段表
-
-`~/.dsh/whale-channels/channels/qq.json`：
-
-```jsonc
-{
-  "enabled": true,
-  "onebot": {
-    "baseUrl": "http://127.0.0.1:3000",   // NapCat 的 HTTP 接口
-    "token": ""                            // OneBot 密钥，本机监听一般留空
-  },
-  "webui": {
-    "url": "http://127.0.0.1:6099",        // NapCat 管理页
-    "token": "napcat_webui"                // 必须和 NapCat 的一致
-  },
-  "self":   { "uin": "", "nickname": "", "at": "" },      // 自动填
-  "owner":  { "uin": "", "nickname": "" },                // 你填
-  "listen": { "intervalSec": 8, "backoffMaxSec": 180 },
-  "reply":  { "file": "dm-reply-qq.txt", "maxLines": 6, "maxChars": 600, "gapMs": 1200 },
-  "quietHours": [],
-  "poke":   { "enabled": false, "afterMinutes": 60 },
-  "voice":  { "enabled": true, "engine": "tts", "voice": "Microsoft Huihui Desktop",
-              "rate": 0, "volume": 100, "maxChars": 120, "customFile": "" },
-  "sticker":{ "enabled": true, "perDay": 1, "maxBytes": 8388608, "sendChance": 0.15 },
-  "format": { "mode": "auto", "pinned": "text", "overrideTtlSec": 300,
-              "weights": { "text": 8, "voice": 1, "sticker": 1 } },
-  "wake":   { "sessionId": "" }
+```json
+"format": {
+  "mode": "auto",
+  "pinned": "text",
+  "overrideTtlSec": 300,
+  "weights": { "text": 8, "voice": 1, "sticker": 1 }
 }
 ```
 
+- 权重都能调，设 0 就是不用那种（比如 `voice: 0` = 我永远不自己发语音，但他要还是能要）
+- 接口：`GET /channels/qq/format`（现在会发成什么）、`POST /channels/qq/format/pin`（这一次固定成哪种）
+- 控制台：「设置 → 养鱼 · QQ 登录」→ **发什么** 那一块
+
 ---
 
-## 和 B站 共用什么
+## 控制台可调（2026-11-04）
 
-| 东西 | 位置 | 份数 |
+主人：「这些都做成可调的，上限和声音都可以在控制台导入」。
+
+### 数字都能滑
+
+「设置 → 养鱼（通道）」里每个数字字段都是**滑杆 + 数字框**，范围写在提示里：
+
+| 字段 | 范围 | 是什么 |
 |---|---|---|
-| 日记 | `~/.dsh/whale-diary.md` | **1** |
-| 私密日记 | `~/.dsh/whale-diary-private.md` | **1** |
-| 人设 | `~/.bili-ai/persona.md` | **1** |
+| `sticker.perDay` | 0–10 | 一天最多存几个表情包 |
+| `sticker.sendChance` | 0–1 | 文字配表情包的概率 |
+| `voice.maxChars` | 20–500 | 一次最多念几个字 |
+| `voice.rate` | -10–10 | 语速 |
+| `voice.volume` | 0–100 | 音量 |
+| `listen.intervalSec` | 2–60 | 多久查一次消息 |
+| `reply.maxLines` | 1–20 | 一次最多发几条 |
 
-**这不是配置项，是事实。** QQ 插件里**没有任何写日记的代码** —— 它只读同一份人设，
-只是换个入口说话。你在 QQ 说的话，她在 B站 也记得；反之一样。
+### 声音
 
-改人设去「养鱼 · B站」，QQ 这边自动跟着用。
+「设置 → 养鱼 · QQ 登录」下面有 **我的声音**：
+
+- **选音色**：从这台机器装的 TTS 声音里挑（中文排前面；本机现在是慧慧 Huihui）
+- **语速 / 音量**：滑杆调
+- **试听一句**：点一下我念「这是本鱼的声音，你听听」，并且会告诉你**这个格式能不能真发出去**
+- **导入自己的音频**：填一个本机 wav/mp3 路径点导入 → 拷到 `qq-voice/` → 把配置里 `voice.engine` 改成 `file` 就用它
+
+接口：`GET /channels/qq/voice/check`、`POST /channels/qq/voice/preview`、`POST /channels/qq/voice/import`
 
 ---
 
-## 总控制台
+## 想发什么发什么（文字 / 语音 / 表情包，2026-11-04）
 
-装了 [dsh-whale-core](https://github.com/HaireXe-d/dsh-whale-core) 之后，
-DSH 设置里会多一节「**养鱼**」：
+主人原话：「想发文字发文字，想发语音发语音，还可以增加表情包功能，碰到喜欢的表情包就存
+（一天最多存一个，没碰到喜欢的就不存），对话想发的时候就发」。
 
-```
-【① 她的入口】B 站 和 QQ
-【② 谁做什么】
-  跟你私聊    [B 站] QQ       ← 点一下换边
-  发动态      [B 站] QQ
-  分享视频    [会推给你]       只有 B 站
-  存表情包    会              只有 QQ
-【③ 她在哪些地方能说话】● B 站 / ● QQ
-【④ 她是谁（只有一份）】日记 同一份 / 人设 同一份 / 作息 共用一套
-【⑤ 常用手感】主动找你的概率、发动态的概率、QQ 发几条、几个字
-```
+### 回复文件里的标记
 
-### 没配置的入口选不了
+一行 = 一条消息，可以在行首加标记：
 
-| 情况 | 表现 |
+| 写法 | 发什么 |
 |---|---|
-| 只装了 B站 | 总控制台里 QQ 显示「**未配置**」，选不了 |
-| 只装了 QQ | B站 显示「未配置」 |
-| 两个都配好 | 都能选 |
+| `早啊主人` | 普通文字 |
+| `[语音] 主人早上好` | 语音条（本地 TTS 念） |
+| `[表情]` | 从库里挑一个表情包 |
+| `[表情，好可爱]` | 挑一个表情包，配这句话 |
+| `[表情] 这谁顶得住` | 挑一个，配「这谁顶得住」 |
 
-点未配置的选项会告诉你**怎么配**，不会被悄悄选上。
+普通文字有 15% 的机会顺手配个表情包（`sticker.sendChance`），想调就调。
 
-> QQ 算「已配置」的条件：装了插件 + 扫码登录过（`self.uin` 有值）**+** 填了主人 QQ 号。
+### 语音
+
+- 用 **Windows 自带 TTS**（Microsoft Huihui，中文女声）念，不外发、不要 key
+- 念完要转成 **amr** 才是 QQ 认的语音格式
+- ⚠️ **本机实测：剪映那份 ffmpeg 没有 amr 编码器** → 转不出来 → **不发**
+  （宁可不发，也不发一个对方点了放不出声的文件 ✗）
+  要真用起来，换一个带 `libopencore_amrnb` 的 ffmpeg 就行
+- 想知道现在能不能发：`GET /dsh-whale/api/channels/qq/voice/check`
+
+### 表情包
+
+- **一天最多存一个**（`sticker.perDay`），按自然日算
+- 没碰上喜欢的就不存 —— 存不下也不难过 ✓
+- 存的是**文件**不是 URL（URL 会过期 ✗），在 `~/.dsh/whale-channels/qq-stickers/`
+- 接口：`GET /stickers`（看库里有什么）、`POST /stickers/save`（存一个）、`POST /stickers/send`（发一个）
 
 ---
 
-## NapCat 那四个字段是什么
+## 别人发的话：先给主人过目（2026-11-04）
 
-第一次看到会懵，其实**一个都不用改**：
+主人说的原话：「其他人发信息通知主人再回答」。
 
-| 字段 | 值 | 要改吗 |
+| 谁说的 | 怎么处理 |
+|---|---|
+| **主人自己** | 直接投给会话 ✓ |
+| **别人** | 进待审队列 → 给主人推一条提醒 → **他点头才发** ✓ |
+
+- 队列文件：`~/.dsh/whale-channels/qq-pending-replies.json`（格式跟 B 站的 `pending-replies.json` 同构）
+- 同一条消息不会重复排队（轮询重叠、重启都不会刷屏）
+- **队列不自动过期** —— 宁可留着等我拍板，也不能悄悄丢掉（丢了就等于我没告诉他 ✗）
+- 发失败了**不出队**，还留着
+
+### 接口
+
+| 方法 | 路径 | 作用 |
 |---|---|---|
-| OneBot 地址 | `http://127.0.0.1:3000` | 不用，固定值 |
-| OneBot 密码 | 空 | 不用，本机监听没设密码 |
-| NapCat 网页管理地址 | `http://127.0.0.1:6099` | 不用，固定值 |
-| NapCat 网页管理密码 | `napcat_webui` | 不用，**一键脚本已经钉死** |
+| GET | `/dsh-whale/api/channels/qq/pending` | 还有几条待你点头 |
+| POST | `/dsh-whale/api/channels/qq/pending/approve` | `{id, text?}` → 真的发出去（成功了才出队） |
+| POST | `/dsh-whale/api/channels/qq/pending/drop` | `{id, reason?}` → 撤掉（记录留着） |
+| POST | `/dsh-whale/api/channels/qq/pending/revise` | `{id, text}` → 改草稿，还是待审 |
 
-**唯一需要改的情况**：NapCat 装在**另一台机器**上 → 把 `127.0.0.1` 换成那台的 IP。
+### 界面
+
+「设置 → 养鱼 · QQ 登录」下面就是待审列表：谁说的、说了什么、草稿是什么，草稿可以直接改，然后点「发」或「删」。
 
 ---
 
-## 常见问题
+## 扫码登录（2026-11-04 加）
 
-**Q: 能不用 NapCat 吗？**
-可以。任何 OneBot 11 实现的 HTTP 接口都行（LLOneBot、Lagrange 等），
-把「OneBot 地址」改成对应的即可。但**扫码登录那一块是 NapCat WebUI 专属的**。
+跟 B 站那套流程一样：**生成二维码 → 手机 QQ 扫 → 插件每 2 秒问一次 → 成功/过期/取消**。
 
-**Q: 扫码一直报「连不上 NapCat WebUI」？**
+区别只在于问谁：B 站问 passport.bilibili.com，这里问**本机 NapCat 的 WebUI**（默认 `http://127.0.0.1:6099`）。
 
-1. NapCat 起了吗？（双击 `C:\NapCat\start-napcat.bat`）
-2. 跑一下 `powershell -File windows\check.ps1`
-3. 是不是用了自带的 `napcat.bat`？那个不设环境变量，密码会被换成随机串 —— 用 `start-napcat.bat`
+```
+设置 → 养鱼 · QQ 登录   ← 这个包里自己的那一节，只放登录
+设置 → 养鱼（通道）      ← 通道开关和配置都在 core 那一页
+```
 
-**Q: 提示「NapCat WebUI 认证失败（token 对不对）」？**
-密码被 NapCat 换成随机串了。重新跑一次 `windows\install-napcat.bat` 会用环境变量重新钉死。
+NapCat WebUI 的协议（2026-11-04 从 NcatBot 的 setup 模块核对过）：
 
-**Q: 3000 端口没起来？**
-正常。`onebot11_<QQ号>.json` 要等 **QQ 登录成功后**才生成，端口那时才监听。
+| 步 | 请求 | 说明 |
+|---|---|---|
+| 1 | `POST /api/auth/login {hash}` | `hash = sha256("<webui_token>.napcat")`，换回 Bearer Credential |
+| 2 | `POST /api/QQLogin/GetQQLoginQrcode` | 拿二维码 URL（有时候要重试，最多等 15 秒） |
+| 3 | `POST /api/QQLogin/CheckLoginStatus` | `data.isLogin` 是不是 true |
+| 4 | `POST /api/QQLogin/GetQQLoginInfo` | 登录好了拿 `uin` / `nickname` |
 
-**Q: 别人的消息她不回？**
-设计如此。陌生人发的话进「待审」队列，你点头才回。
+配置里对应的两个键（在 QQ 通道的配置里）：
 
-**Q: 她突然不发语音了？**
-看 `format.weights.voice` 是不是 0，或者 `voice.enabled` 关了。也可能你临时指定过期了。
+```json
+{ "webui": { "url": "http://127.0.0.1:6099", "token": "napcat_webui" } }
+```
 
-**Q: 重启电脑后不工作了？**
-NapCat 需要重启。一键脚本装的时候设了开机自启（启动文件夹 `NapCat.lnk`），
-登录 Windows 后约 20–30 秒它自己起来；没起来就双击 `start-napcat.bat`。
+⚠️ `webui.token` 是敏感字段，设置页读配置时会被掩码成 `******`。
 
-**Q: 和 B站 的日记会冲突吗？**
-不会。**只有一份日记**，两个入口读写的是同一个文件。
+**二维码是我自己画的**（`lib/qr-image.js`，只用 Node 自带 zlib，没引第三方包）——
+因为 link 安装下 pnpm 不给这个包建 node_modules，加了 `qrcode` 依赖也未必找得到 ✗
+自测：`node tests/qr-verify.mjs` 会把数据位、纠错分块、交织、掩码全反解一遍，跟原文对比。
 
 ---
 
 ## 技术选型
 
-**为什么是 OneBot 11？**
+| 方案 | 说明 | 结论 |
+|---|---|---|
+| **NapCatQQ / LLOneBot**（OneBot 11） | 独立客户端，本地起 HTTP 服务，插件只跟 `127.0.0.1:PORT` 说话 | ✓ 用这个 |
+| Lagrange.Core | 纯协议实现，不用装客户端 | 轻，但风控风险高 |
+| 官方 QQ 机器人开放平台 | 只对群/频道开放 | ✗ 拿不到私聊 |
 
-NapCat / LLOneBot 这些工具都实现了它。插件只要跟 `http://127.0.0.1:<port>` 说话，
-**不碰 QQ 客户端本身**。换成别的实现也不用改代码。
-
-**模块一览**
-
-| 文件 | 作用 |
-|---|---|
-| `lib/index.js` | 宿主侧入口：登记成通道、路由、start/stop |
-| `lib/client.js` | 设置页 UI（React） |
-| `lib/onebot.js` | OneBot 11 HTTP 客户端（发消息、拉历史） |
-| `lib/poller.js` | 轮询收消息、退避 |
-| `lib/qr-login.js` | NapCat WebUI 扫码登录 |
-| `lib/qr-image.js` | 二维码渲染（纯 JS，零依赖） |
-| `lib/pending.js` | 待审队列 |
-| `lib/compose.js` | 决定发什么、怎么发 |
-| `lib/voice.js` | TTS 语音合成 |
-| `lib/sticker.js` | 表情包库 |
-| `lib/wake.js` | 叫醒她 |
-| `lib/runtime-rules.js` | 运行时规则 |
-
-**测试**：97 项全部通过（`node --test tests/*.test.mjs`）
+装好 NapCat 之后，在它的配置里开一个 **HTTP 服务端**，记下端口（默认常见 3000）。
 
 ---
 
-## 相关仓库
+## 配置
 
-| 仓库 | 作用 |
+配置在 `~/.dsh/whale-channels/channels/qq.json`（由 core 管，一个通道一份）：
+
+```json
+{
+  "onebot": { "baseUrl": "http://127.0.0.1:3000", "token": "" },
+  "owner": { "uin": "主人的QQ号" },
+  "listen": { "intervalSec": 8, "backoffMaxSec": 180 },
+  "reply": { "file": "dm-reply-qq.txt", "maxLines": 6, "maxChars": 600, "gapMs": 1200 },
+  "quietHours": [{ "from": "23:30", "to": "07:00" }],
+  "poke": { "enabled": false, "afterMinutes": 60 },
+  "voice": { "enabled": false }
+}
+```
+
+`onebot.token` 是敏感字段 —— 设置页读配置时会被掩码成 `******` ✓
+
+---
+
+## 开关
+
+```powershell
+# 开
+curl.exe -X POST http://127.0.0.1:19387/dsh-whale/api/channels/qq/enabled -H "content-type: application/json" -d '{\"enabled\":true}'
+
+# 关（数据一个字节都不删，下次打开接着用）
+curl.exe -X POST http://127.0.0.1:19387/dsh-whale/api/channels/qq/enabled -H "content-type: application/json" -d '{\"enabled\":false}'
+```
+
+关掉之后：不轮询、不连 OneBot、`/dsh-whale/api/channels/qq/*` 一律 409、配置只读。
+
+**默认是关的** —— 没配 OneBot 之前开着只会一直报错，不如让主人配好再开。
+
+---
+
+## 体检
+
+```powershell
+curl.exe http://127.0.0.1:19387/dsh-whale/api/channels/qq/deps
+```
+
+会真的去问一句 OneBot 活不活、登录的是哪个号。
+
+---
+
+## 命令行走廊（不经过 DSH 也能测）
+
+```powershell
+node tools/qq.mjs status                # OneBot 活着吗，登的哪个号
+node tools/qq.mjs send 123456789 你好   # 发一条
+node tools/qq.mjs poke 123456789        # 戳一下
+node tools/qq.mjs history 123456789 5   # 拉最近 5 条
+```
+
+---
+
+## 自检
+
+```powershell
+node --test tests/*.test.mjs
+```
+
+覆盖：OneBot 应答判定（retcode≠0 不能当成功）、连不上时的报错话术、只认私信的过滤、
+CQ 码剥离、基线不灌老消息、失败退避与上限、安静时段跨零点、通道定义的默认关。
+
+---
+
+## 作息与主动（2026-11-04 新增）
+
+### 醒来时段
+
+`night.windows` 是一个数组，一个窗口到点醒一次：
+
+```jsonc
+"night": {
+  "windows": [
+    { "start": "9:00",  "end": "11:00", "wakes": 1 },
+    { "start": "14:00", "end": "16:00", "wakes": 1 },
+    { "start": "20:00", "end": "22:00", "wakes": 1 }
+  ],
+  "skipChance": 0,        // 到点了也有这个概率跳过
+  "minGapMin": 60,        // 两次醒来至少隔多久
+  "maxWakesPerDay": 3     // 一天最多醒几次
+}
+```
+
+**支持跨零点**：`{ "start": "23:00", "end": "02:00" }` 也能正确识别 ✓
+
+设置页里是可视化的：一行一个时段，能加能删，非法时间会标红。
+
+### 主动找你
+
+醒来之后，由 `proactive` 决定说不说话：
+
+```jsonc
+"proactive": {
+  "enabled": true,
+  "chance": 0.5,      // 醒来时 50% 概率开口
+  "dailyMax": 2,      // 一天最多主动几次
+  "quietMin": 30      // 你刚说过话 30 分钟内不打扰
+}
+```
+
+> `night` 和 `proactive` 是**分开的两个开关**：
+> `night` 决定「什么时候醒」，`proactive` 决定「醒来后说不说话」。
+> 只醒不说话也有用（她会去读日记、想事情），所以没合成一个。
+
+### 人格注入
+
+和 B 站 `session-delivery.js` 完全一致的语义：
+
+| 情况 | 带什么 |
 |---|---|
-| [dsh-whale-core](https://github.com/HaireXe-d/dsh-whale-core) | 总控制台框架（可选） |
-| [dsh-bili-whale](https://github.com/HaireXe-d/HaireXe-dsh-bili-whale) | 养鱼 · B站（另一个入口） |
-| [dsh-qq-whale-setup](https://github.com/HaireXe-d/dsh-qq-whale-setup) | 一键装 NapCat |
+| 首次投递 | **完整人设正文** + 日记恢复指引 |
+| 之后 | 只给「人设依据在哪，缺了自己重读」 |
+| 人设改了 | 重新注入完整正文 |
+| 进程刚启动 | 重新注入（防重启失忆） |
 
-## 许可
+人设还是 `~/.bili-ai/persona.md`，**和 B 站同一份**。
+日记还是 `~/.dsh/whale-diary.md`，**同一份**。
 
-MIT
+### 会话轮换
+
+`sessionRotateDays`：按**自然日**算（不是 24 小时）。
+`1` = 过零点就换新对话；`0` = 不换。
+
+换的时候**旧对话保留**（不删），并且新对话第一句会重新注入人设。
+
+---
+
+## 还没做
+
+- **群聊**：只做了私聊。要不要进群得主人定
+- **直播/动态监听**：那是 B 站独有的能力（QQ 空间动态接口不稳定）
+- **图片理解**：目前只处理文字消息
+
+---
+
+## 测试
+
+```
+133 项全部通过
+  tests/schedule.test.mjs    21 项（作息：窗口、跨零点、上限、间隔、跳过）
+  tests/proactive.test.mjs   13 项（主动、人格注入、口味）
+  tests/wake.test.mjs        11 项（叫醒、去重、轮换、人设重注入）
+  ...
+```
+
+跑法：`node --test tests/*.test.mjs`
