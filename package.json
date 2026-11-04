@@ -16,7 +16,7 @@
     "./pending": "./lib/pending.js",
     "./package.json": "./package.json"
   },
-  "files": ["lib","tools","cordis.patch.yml","README.md","tests"],
+  "files": ["lib","core","tools","cordis.patch.yml","README.md","tests"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": { "inject": [], "platform": "web" }
