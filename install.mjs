@@ -79,25 +79,60 @@ if (!samePath) {
 //   表现成「设置页少了那一节 / 接口 404」，最难查 ✗
 //   现在：装不上就 exit(1)，绝不给你一个半成品。
 const pkgDeps = Object.keys(JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8')).dependencies ?? {})
-let missingDeps = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+
+/**
+ * 把「直接依赖 + 它们的传递依赖」全算进来。
+ *
+ * ⚠️ 2026-11-04 晚（主人：「养鱼 · QQ 重启后不见了」）：
+ *   原来只检查 package.json 里写的**直接**依赖（qrcode）。
+ *   但 qrcode 自己又 require('dijkstrajs') / require('pngjs') ——
+ *   借过来 qrcode 却没借它的依赖 → 插件 import 时炸 →
+ *   **整个设置页从界面上消失了** ✗（这就是主人遇到的那个）
+ *
+ *   现在顺着每个包的 dependencies 往下爬，一个不漏 ✓
+ */
+function collectDeps(root, names) {
+  const out = new Set()
+  const queue = [...names]
+  const seen = new Set()
+  while (queue.length) {
+    const name = queue.shift()
+    if (seen.has(name)) continue
+    seen.add(name)
+    out.add(name)
+    const pj = path.join(root, 'node_modules', name, 'package.json')
+    if (!fs.existsSync(pj)) continue
+    try {
+      const meta = JSON.parse(fs.readFileSync(pj, 'utf8'))
+      for (const dep of Object.keys(meta.dependencies ?? {})) queue.push(dep)
+    } catch { /* 读不了就不往下爬 */ }
+  }
+  return [...out]
+}
+
+const allDeps = collectDeps(target, pkgDeps)
+let missingDeps = allDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
 
 // ⚠️ 2026-11-04 晚：**先试着从 B站 那边借**，借不到再走 npm。
 //   为什么：二维码改用 qrcode 库之后，QQ 包第一次有了运行时依赖。
 //   而这台机器上 npm registry 返回 404（装不上），如果先走 npm 就会卡住/失败 ✗
-//   两边装的依赖完全一样（qrcode 1.5.4 + 它的纯 JS 依赖），借过来直接能用 ✓
+//   两边装的依赖完全一样，借过来直接能用 ✓
 if (missingDeps.length) {
   const borrowFrom = path.join(DSH, 'plugins', 'dsh-bili-whale', 'node_modules')
   if (fs.existsSync(borrowFrom)) {
-    for (const d of [...missingDeps]) {
-      const srcDir = path.join(borrowFrom, d)
-      if (!fs.existsSync(srcDir)) continue
+    // ⚠️ 借的时候也要连着传递依赖一起借（qrcode → dijkstrajs/pngjs）
+    const fromBili = collectDeps(path.join(DSH, 'plugins', 'dsh-bili-whale'), missingDeps)
+      .filter((d) => fs.existsSync(path.join(borrowFrom, d, 'package.json')))
+    for (const d of fromBili) {
+      const dst = path.join(target, 'node_modules', d)
+      if (fs.existsSync(path.join(dst, 'package.json'))) continue
       try {
-        fs.copyFileSync(path.join(srcDir, 'package.json'), path.join(srcDir, 'package.json'))  // 探一下可读
-        fs.cpSync(srcDir, path.join(target, 'node_modules', d), { recursive: true })
+        fs.mkdirSync(path.dirname(dst), { recursive: true })
+        fs.cpSync(path.join(borrowFrom, d), dst, { recursive: true })
         say(`        （从 B站 借来了 ${d}）`)
       } catch { /* 借不到就走 npm */ }
     }
-    missingDeps = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+    missingDeps = allDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
   }
 }
 
@@ -132,7 +167,10 @@ if (missingDeps.length) {
 }
 
 // ⚠️ 硬校验：不只是"命令跑完了"，而是**真的能解析到**
-const stillMissing = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+// ⚠️ 校验也要查**传递依赖** —— 只查直接依赖的话，
+//   qrcode 在、dijkstrajs 不在，照样 "验证通过" 但插件起不来 ✗
+const finalDeps = collectDeps(target, pkgDeps)
+const stillMissing = finalDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
 
 if (stillMissing.length) {
   console.error('')
