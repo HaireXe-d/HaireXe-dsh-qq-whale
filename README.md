@@ -1,8 +1,12 @@
 # dsh-qq-whale
 
-> 养鱼的 QQ 通道。跟 [dsh-bili-whale](../dsh-bili-whale) 可以**同时开**，也能**单独关**。
+> 养鱼的 QQ 入口。装了它就有**完整的养鱼体验** —— 总控制台、作息、人格、记忆全在里面。
 >
-> 依赖 [dsh-whale-core](../whale-core) 提供通道框架。
+> 想同时在 B 站也养的话，再装 [HaireXe-dsh-bili-whale](https://github.com/HaireXe-d/HaireXe-dsh-bili-whale)，
+> 两个入口会自动共用同一份记忆和同一套设置。**只装这一个也完全能用** ✓
+>
+> > **自带通道框架**：`core/` 目录里是总控制台和多入口管理，跟着本仓库一起装，
+> > 不用另外下任何东西。
 
 ---
 
