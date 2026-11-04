@@ -48,8 +48,13 @@ test('deps 在没配的时候有条目是红的，但不抛', async () => {
 
 test('路由表声明了 status / test / poke', () => {
   const ch = buildChannel({ dshHome: tmpHome(), readConfig: () => DEFAULTS })
+  // ⚠️ 2026-11-04 晚：新增三个备份接口（主人要「控制台有记忆恢复」）
+  //   GET  /backup/inspect   看一眼备份目录
+  //   POST /backup/export    备份
+  //   POST /backup/import    恢复（默认只预演）
   assert.deepEqual(Object.keys(ch.routes).sort(), [
     'GET /accounts',
+    'GET /backup/inspect',
     'GET /format',
     'GET /pending',
     'GET /status',
@@ -59,6 +64,8 @@ test('路由表声明了 status / test / poke', () => {
     'POST /auth/qr/cancel',
     'POST /auth/qr/poll',
     'POST /auth/qr/start',
+    'POST /backup/export',
+    'POST /backup/import',
     'POST /format/pin',
     'POST /pending/approve',
     'POST /pending/drop',
