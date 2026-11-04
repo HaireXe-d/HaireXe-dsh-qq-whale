@@ -12,7 +12,7 @@
  * 所以 QQ 这份备份**必须把共用的东西也带上**，否则在另一台机器上「复活」出来的是个失忆的她 ✓
  *
  * 用法：
- *   node tools/qq-backup.mjs                 备份（默认到桌面「她QQ的备份」）
+ *   node tools/qq-backup.mjs                 备份（默认到桌面「邦邦的备份」）
  *   node tools/qq-backup.mjs --to <目录>     指定目录
  *   node tools/qq-backup.mjs --dry           只列要拷什么
  *   node tools/qq-backup.mjs --restore --from <目录> --dry|--go
@@ -106,7 +106,7 @@ for (let i = 0; i < argv.length; i += 1) {
 const DRY = !!opt.dry
 const GO = !!opt.go
 const FROM = opt.from ? path.resolve(String(opt.from)) : null
-const TO = opt.to ? path.resolve(String(opt.to)) : path.join(HOME, 'Desktop', '她QQ的备份')
+const TO = opt.to ? path.resolve(String(opt.to)) : path.join(HOME, 'Desktop', '邦邦的备份')
 
 const log = (s = '') => console.log(s)
 
@@ -192,6 +192,14 @@ function doBackup() {
     const isWorkDir = path.basename(src) === 'whale-work'
     if (!DRY) {
       fs.mkdirSync(path.dirname(dst), { recursive: true })
+      // ⚠️ 2026-11-04 晚（主人：「不要改动邦邦的备份，直接使用邦邦的备份」）：
+      //   现在 QQ 备份写进的是**同一个**「邦邦的备份」目录 —— 那里已经有内容了。
+      //   覆盖前先把旧的留一份到 .previous/ ，万一新备份有问题还能找回 ✓
+      if (fs.existsSync(dst) && fs.statSync(dst).isFile()) {
+        const prevDir = path.join(TO, '.previous', new Date().toISOString().slice(0, 10))
+        fs.mkdirSync(prevDir, { recursive: true })
+        try { fs.copyFileSync(dst, path.join(prevDir, rel.replace(/[\\/]/g, '__'))) } catch { /* 留不下就算了 */ }
+      }
       if (isWorkDir && fs.statSync(src).isDirectory()) copyDirFiltered(src, dst, WORK_KEEP)
       else fs.cpSync(src, dst, { recursive: true })
     }
