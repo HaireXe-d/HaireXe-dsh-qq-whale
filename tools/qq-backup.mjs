@@ -167,7 +167,25 @@ function doBackup() {
 
   log('  ── QQ 自己的设置与状态 ──')
   for (const [src, rel] of FILES.slice(4)) {
-    if (!fs.existsSync(src)) { log(`    –  ${rel}（还没有，跳过）`); miss += 1; continue }
+    if (!fs.existsSync(src)) {
+      // ⚠️ 2026-11-04：qq.json 是**第一次保存设置**时才写盘的（core 读取时用默认值兜底，
+      //   所以设置页照样能看，但文件不存在）。
+      //   全新机器上"装完就备份"会遇到这种情况 —— 那就**现场写一份默认的进去**，
+      //   别让恢复出来的人发现 QQ 设置整个丢了 ✓
+      if (path.basename(src) === 'qq.json' && !DRY) {
+        const dst = path.join(TO, rel)
+        fs.mkdirSync(path.dirname(dst), { recursive: true })
+        fs.writeFileSync(dst, JSON.stringify({
+          note: '这是备份时补的默认配置（原机还没保存过设置）',
+          owner: { uin: '', nickname: '' },
+          self: { uin: '', nickname: '' },
+        }, null, 2) + '\n', 'utf8')
+        log(`    +  ${rel}（原本不存在，补了一份默认的）`)
+        n += 1
+        continue
+      }
+      log(`    –  ${rel}（还没有，跳过）`); miss += 1; continue
+    }
     const dst = path.join(TO, rel)
     const sz = sizeOf(src)
     bytes += sz
