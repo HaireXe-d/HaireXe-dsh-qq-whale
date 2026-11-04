@@ -39,6 +39,12 @@ node install.mjs
 > 必须有一个 OneBot 实现接管 QQ 进程才能收发消息。NapCat 就是那个东西，本插件只是它的客户端。
 >
 > 已经装过 NapCat 的机器重跑 `install.mjs` 不会重新下载，只把配置修好。
+>
+> NapCat 没装上就**在本仓库里重试**（不用去别的仓库）：
+>
+> ```bash
+> node install.mjs --napcat-only
+> ```
 
 ---
 

@@ -23,14 +23,25 @@ const PROFILE_DIR = path.join(DSH, 'profiles', PROFILE)
 const say = (s = '') => console.log(s)
 const die = (s) => { console.error('\n  [X] ' + s + '\n'); process.exit(1) }
 
+// ⚠️ 2026-11-04 晚（主人：「dsh-qq-whale-setup 为什么不放到 dsh-qq-whale 里面」）：
+//   NapCat 的安装已经并进本脚本了，那个单独的仓库因此取消。
+//   但"下载失败"这种情况总会有（GitHub 连不上、磁盘不够）——
+//   以前会让用户去敲另一个仓库；现在改成 `node install.mjs --napcat-only` 就地重试 ✓
+const ARGV = process.argv.slice(2)
+const NAPCAT_ONLY = ARGV.includes('--napcat-only')
+
 say('')
-say('  养鱼 · QQ   安装')
+say('  养鱼 · QQ   ' + (NAPCAT_ONLY ? '只装 NapCat' : '安装'))
 say('  ' + '='.repeat('养鱼 · QQ'.length + 12))
 say('')
 
 if (!fs.existsSync(PROFILE_DIR)) {
   die(`找不到 DSH profile：${PROFILE_DIR}\n      先启动一次 DeepSeek Harness，它会自己建好`)
 }
+
+// ⚠️ --napcat-only：只补装 NapCat（插件已经装好的情况下用它重试）
+//   把 1~4 步整个跳过 —— 不然重跑一次会把插件目录删了重建，没必要
+if (!NAPCAT_ONLY) {
 
 // ── 1. 自带共用框架 ─────────────────────────────────────────────
 // ⚠️ 2026-11-04 晚：主人说「dsh-whale-core 这个库不要，那两个库里分别放一个就行」。
@@ -135,10 +146,14 @@ try {
   say('        [!] 建链接失败：' + e.message)
 }
 
+} // ← 结束「!NAPCAT_ONLY」那一段（插件本体装完了）
+
 // ── 5. 装 NapCat（2026-11-04 晚并入，主人要求「给个地址就能自动配好直接扫码」）──
 //
-// 以前 NapCat 是**另一个仓库**里的一键脚本，用户得先 clone 那个再双击 bat。
-// 现在并进来：跑完 install.mjs 就直接有 NapCat，DSH 里点「扫码登录」就能出二维码 ✓
+// 以前 NapCat 是**另一个仓库**（dsh-qq-whale-setup）里的一键脚本，用户得先 clone 那个再双击 bat。
+// 主人问「为什么不放到 dsh-qq-whale 里面」—— 对，已经并进来了：
+// 跑完 install.mjs 就直接有 NapCat，DSH 里点「扫码登录」就能出二维码 ✓
+// 下载失败的话，就地重试：`node install.mjs --napcat-only`
 //
 //   · 已经装过（C:\NapCat\app\node.exe 在）→ 只修配置，不重新下载
 //   · Windows 自动装；其它系统给出提示（NapCat 目前只有 Windows shell 版好用）
@@ -235,8 +250,11 @@ async function setupNapcat() {
     say('        下载完成')
   } catch (e) {
     say('        [!] 下载失败（GitHub 连不上 / 磁盘不够）')
-    say('            插件已经装好了，NapCat 可以之后再装：')
-    say('              https://github.com/HaireXe-d/dsh-qq-whale-setup')
+    say('            插件已经装好了，NapCat 可以稍后再装。就地重试：')
+    say('')
+    say('              node install.mjs --napcat-only')
+    say('')
+    say('            （不需要再下载别的东西，本仓库里就有）')
     return { ok: false, reason: '下载失败' }
   }
 
@@ -297,9 +315,11 @@ if (napcat.ok) {
   say('  1. 完整退出 DSH（托盘也要退）再启动')
   say('  2. DSH → 设置 →「养鱼 · QQ」→ 扫码登录')
 } else {
-  say('  插件装好了，但 NapCat 没装成。扫码之前要先有它：')
+  say('  插件装好了，但 NapCat 没装成。扫码之前要先有它。')
   say('')
-  say('    https://github.com/HaireXe-d/dsh-qq-whale-setup')
+  say('  在这个目录里重试一次就行（不用下别的东西）：')
+  say('')
+  say('      node install.mjs --napcat-only')
   say('')
   say('  装完再：完整退出 DSH → 重启 → 设置 →「养鱼 · QQ」→ 扫码登录')
 }
