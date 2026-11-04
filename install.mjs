@@ -79,7 +79,28 @@ if (!samePath) {
 //   表现成「设置页少了那一节 / 接口 404」，最难查 ✗
 //   现在：装不上就 exit(1)，绝不给你一个半成品。
 const pkgDeps = Object.keys(JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8')).dependencies ?? {})
-const missingDeps = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+let missingDeps = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+
+// ⚠️ 2026-11-04 晚：**先试着从 B站 那边借**，借不到再走 npm。
+//   为什么：二维码改用 qrcode 库之后，QQ 包第一次有了运行时依赖。
+//   而这台机器上 npm registry 返回 404（装不上），如果先走 npm 就会卡住/失败 ✗
+//   两边装的依赖完全一样（qrcode 1.5.4 + 它的纯 JS 依赖），借过来直接能用 ✓
+if (missingDeps.length) {
+  const borrowFrom = path.join(DSH, 'plugins', 'dsh-bili-whale', 'node_modules')
+  if (fs.existsSync(borrowFrom)) {
+    for (const d of [...missingDeps]) {
+      const srcDir = path.join(borrowFrom, d)
+      if (!fs.existsSync(srcDir)) continue
+      try {
+        fs.copyFileSync(path.join(srcDir, 'package.json'), path.join(srcDir, 'package.json'))  // 探一下可读
+        fs.cpSync(srcDir, path.join(target, 'node_modules', d), { recursive: true })
+        say(`        （从 B站 借来了 ${d}）`)
+      } catch { /* 借不到就走 npm */ }
+    }
+    missingDeps = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+  }
+}
+
 if (missingDeps.length) {
   say('  [2.5] 装依赖：' + missingDeps.join(', ') + ' ...')
   const runners = [
@@ -91,18 +112,18 @@ if (missingDeps.length) {
   let tried = []
   for (const r of runners) {
     try {
-      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', shell: true })
+      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', shell: true, timeout: 180000 })
       ok = true
       break
     } catch (e) { tried.push(r.cmd) }
   }
   if (!ok) {
     console.error('')
-    console.error('  [X] 没有可用的包管理器（试过：' + tried.join(' / ') + '）')
-    console.error('      这个插件必须有 ' + missingDeps.join(', ') + ' 才能加载，装不上就会表现为')
-    console.error('      「设置页少了这一节」或者「接口 404」。')
+    console.error('  [X] 装不上依赖（试过：' + tried.join(' / ') + '）')
+    console.error('      这个插件必须有 ' + missingDeps.join(', ') + ' 才能加载，')
+    console.error('      装不上就会表现为「设置页少了这一节」或者「接口 404」。')
     console.error('')
-    console.error('      手动修（装完再重跑本脚本也行）：')
+    console.error('      手动修：')
     console.error('        cd "' + target + '"')
     console.error('        npm install')
     console.error('')
@@ -112,6 +133,7 @@ if (missingDeps.length) {
 
 // ⚠️ 硬校验：不只是"命令跑完了"，而是**真的能解析到**
 const stillMissing = pkgDeps.filter((d) => !fs.existsSync(path.join(target, 'node_modules', d, 'package.json')))
+
 if (stillMissing.length) {
   console.error('')
   console.error('  [X] 依赖装了但找不到：' + stillMissing.join(', '))

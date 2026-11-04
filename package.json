@@ -2,7 +2,15 @@
   "name": "dsh-qq-whale",
   "version": "0.2.0",
   "description": "养鱼的 QQ 通道：接 OneBot 11（NapCat / LLOneBot），收私信、发消息、戳一戳、扫码登录；别人发来的话先进待审队列，主人点头才回。",
-  "keywords": ["dsh","dsh-plugin","deepseek-harness","qq","onebot","napcat","agent"],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "qq",
+    "onebot",
+    "napcat",
+    "agent"
+  ],
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
@@ -16,11 +24,30 @@
     "./pending": "./lib/pending.js",
     "./package.json": "./package.json"
   },
-  "files": ["lib","core","tools","cordis.patch.yml","README.md","tests"],
+  "files": [
+    "lib",
+    "core",
+    "tools",
+    "cordis.patch.yml",
+    "README.md",
+    "tests"
+  ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
-    "client": { "inject": [], "platform": "web" }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
   },
-  "peerDependencies": { "dsh-whale-core": ">=0.1.0" },
-  "license": "MIT"
+  "peerDependencies": {
+    "dsh-whale-core": ">=0.1.0"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "qrcode": "1.5.4",
+    "dijkstrajs": "^1.0.1",
+    "pngjs": "^5.0.0"
+  }
 }
