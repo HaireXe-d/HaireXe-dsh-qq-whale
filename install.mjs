@@ -121,6 +121,21 @@ manifest.dsh.profile.bundles ??= []
 
 manifest.dependencies[PKG] = 'link:' + target.replace(/\\/g, '/')
 if (!manifest.dsh.profile.bundles.includes(PKG)) manifest.dsh.profile.bundles.push(PKG)
+
+// ⚠️ 2026-11-04 晚：自带的 core 也要**作为独立包登记**。
+//   为什么：DSH 只加载 profile.bundles 里登记的包，客户端 UI 也是按包的 manifest 去找的。
+//   只在插件子目录里放一份 core，服务端能手动挂起来，
+//   但 **core 的设置节（总控制台那张卡）永远加载不到** ✗（实测过）
+//   所以这里把 target/core 也 link 成 dsh-whale-core 并登记 ✓
+//   两个插件都带 core 时，谁先装谁占位（后装的发现已经指到同一个包就不重复加）。
+const coreDir = path.join(target, 'core')
+let coreLinked = false
+if (fs.existsSync(path.join(coreDir, 'package.json'))) {
+  manifest.dependencies['dsh-whale-core'] = 'link:' + coreDir.replace(/\\/g, '/')
+  if (!manifest.dsh.profile.bundles.includes('dsh-whale-core')) manifest.dsh.profile.bundles.push('dsh-whale-core')
+  coreLinked = true
+}
+
 fs.writeFileSync(pkgFile, JSON.stringify(manifest, null, 2) + '\n')
 say('  [3/3] 已登记到 profile bundles  ✓')
 
@@ -133,6 +148,21 @@ try {
   say('        链接：' + linkPath)
 } catch (e) {
   say('        [!] 建链接失败：' + e.message)
+}
+
+// 把自带的 core 也链到 node_modules/dsh-whale-core
+if (coreLinked) {
+  const coreLink = path.join(PROFILE_DIR, 'node_modules', 'dsh-whale-core')
+  try {
+    // 已经有（另一个入口装的）就别覆盖 —— 两边内容是同一份，谁装都一样
+    if (!fs.existsSync(coreLink)) {
+      if (process.platform === 'win32') execFileSync('cmd', ['/c', 'mklink', '/J', coreLink, coreDir], { stdio: 'pipe' })
+      else fs.symlinkSync(coreDir, coreLink, 'junction')
+    }
+    say('        链接共用框架：' + coreLink)
+  } catch (e) {
+    say('        [!] core 链接失败：' + e.message)
+  }
 }
 
 say('')
