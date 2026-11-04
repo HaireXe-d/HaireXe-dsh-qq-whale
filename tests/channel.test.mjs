@@ -52,8 +52,12 @@ test('路由表声明了 status / test / poke', () => {
   //   GET  /backup/inspect   看一眼备份目录
   //   POST /backup/export    备份
   //   POST /backup/import    恢复（默认只预演）
+  // 再加两个快登接口（主人「为什么还是扫不出来」→ 有已登录过的号就不用扫码）
+  //   GET  /auth/quick       列出能快登的号
+  //   POST /auth/quick       用一个号直接登
   assert.deepEqual(Object.keys(ch.routes).sort(), [
     'GET /accounts',
+    'GET /auth/quick',
     'GET /backup/inspect',
     'GET /format',
     'GET /pending',
@@ -64,6 +68,7 @@ test('路由表声明了 status / test / poke', () => {
     'POST /auth/qr/cancel',
     'POST /auth/qr/poll',
     'POST /auth/qr/start',
+    'POST /auth/quick',
     'POST /backup/export',
     'POST /backup/import',
     'POST /format/pin',
