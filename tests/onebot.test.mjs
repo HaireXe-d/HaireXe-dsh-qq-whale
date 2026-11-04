@@ -19,11 +19,11 @@ function fakeFetch(map) {
 test('send_private_msg：带 token 就带 Authorization，不带就不带', async () => {
   const f = fakeFetch({ send_private_msg: { status: 'ok', retcode: 0, data: { message_id: 42 } } })
   const ob = createOneBot({ baseUrl: 'http://127.0.0.1:3000/', token: 'tk', fetchImpl: f })
-  const data = await ob.sendPrivate('3546626108951012', '早')
+  const data = await ob.sendPrivate('30003', '早')
   assert.equal(data.message_id, 42)
   assert.equal(f.calls[0].url, 'http://127.0.0.1:3000/send_private_msg')
   assert.equal(f.calls[0].init.headers.authorization, 'Bearer tk')
-  assert.equal(f.calls[0].body.user_id, '3546626108951012')
+  assert.equal(f.calls[0].body.user_id, '30003')
   assert.equal(f.calls[0].body.message, '早')
 
   const g = fakeFetch({})

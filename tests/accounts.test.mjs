@@ -19,12 +19,11 @@ async function callRoute(ch, key, body) {
   return { status: res.statusCode, body: res.body }
 }
 
-// ⚠️ 2026-11-04 晚：GET /accounts 现在会**先问一次 NapCat 实时登录的是谁**
-//   （解决主人「为什么已经登录的和最上面显示的不一样」）。
-//   但 DEFAULTS 里 webui.url 默认就是真实的 127.0.0.1:6099 ——
-//   测试会真的连上本机 NapCat，结果不稳定（取决于当时登的是哪个号）✗
-//   所以这里把 url 指到一个死端口，模拟"问不到 NapCat"的情况，
-//   这样测的就纯粹是「从配置读」这条回退路径 ✓
+// ⚠️ 2026-11-04 晚：`GET /accounts` 现在会**顺便问一次 NapCat 实时登录的是谁**
+//   （主人：「为什么已经登录的和最上面显示的不一样」）。
+//   DEFAULTS.webui.url 是真实的 127.0.0.1:6099 —— 测试会真的连上本机 NapCat，
+//   本机若登着一个号，于是「没配时该为空」的断言变成环境相关 → 假失败 ✗
+//   这里把 url 指向死端口，测的才是「从配置读」这条回退路径 ✓
 const DEAD_WEBUI = { ...DEFAULTS.webui, url: 'http://127.0.0.1:1' }
 
 test('GET /accounts：没配的时候返回空的自号和主号', async () => {
@@ -45,13 +44,13 @@ test('GET /accounts：配了就读出来', async () => {
     ...DEFAULTS,
     webui: DEAD_WEBUI,
     self: { uin: '123456789', nickname: '邦邦' },
-    owner: { uin: '3546626108951012', nickname: '主人' },
+    owner: { uin: '30003', nickname: '主人' },
   }
   const ch = buildChannel({ dshHome: tmp(), readConfig: () => cfg, log: () => {} })
   const r = await callRoute(ch, 'GET /accounts')
   assert.equal(r.body.self.uin, '123456789')
   assert.equal(r.body.self.nickname, '邦邦')
-  assert.equal(r.body.owner.uin, '3546626108951012')
+  assert.equal(r.body.owner.uin, '30003')
   assert.equal(r.body.owner.nickname, '主人')
 })
 
@@ -60,7 +59,7 @@ test('GET /accounts 不把 token / 密码漏出来', async () => {
     ...DEFAULTS,
     onebot: { baseUrl: 'http://127.0.0.1:3000', token: 'SECRET_TOKEN' },
     webui: { url: 'http://127.0.0.1:6099', token: 'SECRET_WEBUI' },
-    owner: { uin: '3546626108951012' },
+    owner: { uin: '30003' },
   }
   const ch = buildChannel({ dshHome: tmp(), readConfig: () => cfg, log: () => {} })
   const r = await callRoute(ch, 'GET /accounts')

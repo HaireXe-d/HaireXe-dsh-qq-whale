@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { buildChannel, DEFAULTS } from '../lib/index.js'
 
-const OWNER = '3546626108951012'
+const OWNER = '30003'
 const STRANGER = '10001'
 let passed = 0
 const check = async (name, fn) => {
