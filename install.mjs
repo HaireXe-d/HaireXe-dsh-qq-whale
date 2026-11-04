@@ -247,7 +247,12 @@ function writeNapcatConfig() {
     port: webui.port ?? 6099,
     token: WEBUI_TOKEN,
     loginRate: webui.loginRate ?? 10,
-    autoLoginAccount: webui.autoLoginAccount ?? '',
+    // ⚠️ 2026-11-04 晚（主人：「我不想用这个号登录啊，怎么每次重启都会出问题」）：
+    //   autoLoginAccount 一旦被填过，NapCat 每次启动都会**自动登那个号** ——
+    //   于是「重启后又是那个号」，而且页面上的扫码/快登都被抢跑 ✗
+    //   这个字段通常是 NapCat WebUI 自己写进去的，属于历史遗留。
+    //   这里**强制清空**：要登哪个号，由用户在 DSH 里点 ✓
+    autoLoginAccount: '',
     disableWebUI: webui.disableWebUI ?? false,
     accessControlMode: webui.accessControlMode ?? 'none',
     ipWhitelist: webui.ipWhitelist ?? [],
