@@ -10,6 +10,66 @@
 
 ---
 
+## 三分钟装完，扫码就能用
+
+```bash
+git clone https://github.com/HaireXe-d/dsh-qq-whale
+cd dsh-qq-whale
+node install.mjs
+```
+
+**这一条命令会做完四件事**（以前要三个仓库 + 双击 bat）：
+
+| 步骤 | 做什么 |
+|---|---|
+| 1 | 把插件放到 `~/.dsh/plugins/dsh-qq-whale` |
+| 2 | 自带的总控制台（`core/`）一起装好 |
+| 3 | 登记进 DSH，建好链接 |
+| 4 | **自动装 NapCat**：下载 118MB → 解压 → 钉死 WebUI 密码 → 开 OneBot HTTP → 设开机自启 |
+
+装完（实测 73 秒，大部分时间在下载）：
+
+1. 双击 `C:\NapCat\start-napcat.bat`（第一次要手动点，之后开机自启），等 20~30 秒
+2. **完整退出 DSH**（托盘也要退）再启动
+3. 设置 →「养鱼 · QQ」→ 点「**扫码登录**」
+4. 手机 QQ 扫一下，在手机上确认
+5. 填「主人的 QQ 号」——完事
+
+> 为什么 NapCat 必须单独存在：QQ 官方客户端**不对外开任何接口**，
+> 必须有一个 OneBot 实现接管 QQ 进程才能收发消息。NapCat 就是那个东西，本插件只是它的客户端。
+>
+> 已经装过 NapCat 的机器重跑 `install.mjs` 不会重新下载，只把配置修好。
+
+---
+
+## 备份：桌面上的一份，两个入口都能用
+
+```bash
+node tools/qq-backup.mjs            # 备份到桌面「她QQ的备份」
+node tools/qq-backup.mjs --dry      # 先看会拷什么，不实际拷
+```
+
+一份备份 = **整条鱼**，不只是 QQ 那边：
+
+| 备份里的东西 | 为什么也在这里 |
+|---|---|
+| 人设 `bili-ai/persona.md` | 两个入口共用这一份 |
+| 日记 + 私密日记 + 规则 | 同上，**只有一份** |
+| `whale-habits.json` | 作息/口味/人设设置（改了会同步到两边） |
+| `whale-body.json` | 她现在在哪段对话（恢复后还记得聊到哪） |
+| `bili-whale.config.json` + B站 凭据 | 一起用时，恢复出来 B站 也是登着的 |
+| `qq.json` + 登录状态 | QQ 这边不用重新扫码 |
+| `whale-work/` | 她写过的东西（调试脚本自动滤掉） |
+| `sessions/` | 对话全文 |
+
+恢复：`node tools/qq-backup.mjs --restore --from "<备份目录>" --go`（不加 `--go` 只列清单）
+
+> ⚠️ 备份里有登录状态和日记，**别传到公开的地方**。
+>
+> 注意：备份是**手动跑命令**触发的，装完不会自己生成。
+
+---
+
 ## 它做什么
 
 - 收主人的 QQ 私信，投给会话

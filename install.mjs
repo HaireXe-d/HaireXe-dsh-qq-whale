@@ -121,21 +121,6 @@ manifest.dsh.profile.bundles ??= []
 
 manifest.dependencies[PKG] = 'link:' + target.replace(/\\/g, '/')
 if (!manifest.dsh.profile.bundles.includes(PKG)) manifest.dsh.profile.bundles.push(PKG)
-
-// ⚠️ 2026-11-04 晚：自带的 core 也要**作为独立包登记**。
-//   为什么：DSH 只加载 profile.bundles 里登记的包，客户端 UI 也是按包的 manifest 去找的。
-//   只在插件子目录里放一份 core，服务端能手动挂起来，
-//   但 **core 的设置节（总控制台那张卡）永远加载不到** ✗（实测过）
-//   所以这里把 target/core 也 link 成 dsh-whale-core 并登记 ✓
-//   两个插件都带 core 时，谁先装谁占位（后装的发现已经指到同一个包就不重复加）。
-const coreDir = path.join(target, 'core')
-let coreLinked = false
-if (fs.existsSync(path.join(coreDir, 'package.json'))) {
-  manifest.dependencies['dsh-whale-core'] = 'link:' + coreDir.replace(/\\/g, '/')
-  if (!manifest.dsh.profile.bundles.includes('dsh-whale-core')) manifest.dsh.profile.bundles.push('dsh-whale-core')
-  coreLinked = true
-}
-
 fs.writeFileSync(pkgFile, JSON.stringify(manifest, null, 2) + '\n')
 say('  [3/3] 已登记到 profile bundles  ✓')
 
@@ -150,27 +135,172 @@ try {
   say('        [!] 建链接失败：' + e.message)
 }
 
-// 把自带的 core 也链到 node_modules/dsh-whale-core
-if (coreLinked) {
-  const coreLink = path.join(PROFILE_DIR, 'node_modules', 'dsh-whale-core')
-  try {
-    // 已经有（另一个入口装的）就别覆盖 —— 两边内容是同一份，谁装都一样
-    if (!fs.existsSync(coreLink)) {
-      if (process.platform === 'win32') execFileSync('cmd', ['/c', 'mklink', '/J', coreLink, coreDir], { stdio: 'pipe' })
-      else fs.symlinkSync(coreDir, coreLink, 'junction')
-    }
-    say('        链接共用框架：' + coreLink)
-  } catch (e) {
-    say('        [!] core 链接失败：' + e.message)
-  }
+// ── 5. 装 NapCat（2026-11-04 晚并入，主人要求「给个地址就能自动配好直接扫码」）──
+//
+// 以前 NapCat 是**另一个仓库**里的一键脚本，用户得先 clone 那个再双击 bat。
+// 现在并进来：跑完 install.mjs 就直接有 NapCat，DSH 里点「扫码登录」就能出二维码 ✓
+//
+//   · 已经装过（C:\NapCat\app\node.exe 在）→ 只修配置，不重新下载
+//   · Windows 自动装；其它系统给出提示（NapCat 目前只有 Windows shell 版好用）
+//   · 装不上**不算失败** —— 插件本身照样能用，只是扫码之前得自己装 NapCat
+const NAPCAT_DIR = process.env.NAPCAT_HOME || path.join(path.parse(process.cwd()).root, 'NapCat')
+const NAPCAT_VER = 'v4.18.42'
+const NAPCAT_ZIP = 'NapCat.Shell.Windows.Node.zip'
+const NAPCAT_URL = `https://github.com/NapNeko/NapCatQQ/releases/download/${NAPCAT_VER}/${NAPCAT_ZIP}`
+const WEBUI_TOKEN = process.env.NAPCAT_WEBUI_SECRET_KEY || 'napcat_webui'
+
+function napcatInstalled() {
+  return fs.existsSync(path.join(NAPCAT_DIR, 'app', 'node.exe')) || fs.existsSync(path.join(NAPCAT_DIR, 'app', 'index.js'))
 }
 
-say('')
-say('  ' + '='.repeat('养鱼 · QQ'.length + 12))
+/** 写 westui/onebot 配置（pin 密码 + 开 OneBot HTTP）—— 和 bat 里那套完全一样 */
+function writeNapcatConfig() {
+  const cfgDir = path.join(NAPCAT_DIR, 'app', 'napcat', 'config')
+  fs.mkdirSync(cfgDir, { recursive: true })
+  const write = (file, obj) => {
+    fs.writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8')
+    // ⚠️ NapCat 读到 BOM 会 SyntaxError 起不来 —— 去掉（bat 里那段 [IO.File] 就是在干这个）
+    const b = fs.readFileSync(file)
+    if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) fs.writeFileSync(file, b.subarray(3))
+  }
+  // WebUI：密码钉死，不然 NapCat 会把"像默认值"的 token 换成随机串
+  const webuiFile = path.join(cfgDir, 'webui.json')
+  let webui = {}
+  try { webui = JSON.parse(fs.readFileSync(webuiFile, 'utf8')) } catch { /* 新建 */ }
+  write(webuiFile, {
+    host: webui.host ?? '0.0.0.0',
+    port: webui.port ?? 6099,
+    token: WEBUI_TOKEN,
+    loginRate: webui.loginRate ?? 10,
+    autoLoginAccount: webui.autoLoginAccount ?? '',
+    disableWebUI: webui.disableWebUI ?? false,
+    accessControlMode: webui.accessControlMode ?? 'none',
+    ipWhitelist: webui.ipWhitelist ?? [],
+    ipBlacklist: webui.ipBlacklist ?? [],
+    enableXForwardedFor: webui.enableXForwardedFor ?? false,
+    enable2FA: webui.enable2FA ?? false,
+    totpSecret: webui.totpSecret ?? '',
+  })
+  // OneBot：开 HTTP 服务在 127.0.0.1:3000（插件默认连这个）
+  write(path.join(cfgDir, 'onebot11.json'), {
+    network: {
+      httpServers: [{
+        name: 'dsh-whale', enable: true, port: 3000, host: '127.0.0.1',
+        enableCors: true, enableWebsocket: false, messagePostFormat: 'array', token: '', debug: false,
+      }],
+      httpSseServers: [], httpClients: [], websocketServers: [], websocketClients: [], plugins: [],
+    },
+    musicSignUrl: '',
+    enableLocalFile2Url: false,
+    parseMultMsg: false,
+  })
+  // 启动脚本：**必须带 NAPCAT_WEBUI_SECRET_KEY**，否则密码又被换掉
+  fs.writeFileSync(path.join(NAPCAT_DIR, 'start-napcat.bat'), [
+    '@echo off',
+    'setlocal',
+    `cd /d "${NAPCAT_DIR}\\app"`,
+    `set NAPCAT_WEBUI_SECRET_KEY=${WEBUI_TOKEN}`,
+    `"${NAPCAT_DIR}\\app\\node.exe" "${NAPCAT_DIR}\\app\\index.js" %*`,
+    '',
+  ].join('\r\n'), 'ascii')
+}
+
+async function setupNapcat() {
+  if (process.platform !== 'win32') {
+    say('  [4/4] 装 NapCat')
+    say('        [!] 目前只有 Windows 有现成的一键安装。')
+    say('            其它系统：从 https://github.com/NapNeko/NapCatQQ/releases 自己装，')
+    say('            然后确认 OneBot HTTP 开在 127.0.0.1:3000。插件本身已经装好了。')
+    return { ok: false, reason: '非 Windows' }
+  }
+
+  say('  [4/4] 装 NapCat（扫码登录要用它）')
+
+  if (napcatInstalled()) {
+    say('        已经装过了 → 只修一下配置')
+    writeNapcatConfig()
+    say('        配置已就绪 ✓')
+    return { ok: true, reused: true }
+  }
+
+  // 下载（约 118 MB）
+  say(`        下载 NapCat ${NAPCAT_VER}（约 118 MB，慢的话等一会儿）…`)
+  fs.mkdirSync(NAPCAT_DIR, { recursive: true })
+  const zipPath = path.join(NAPCAT_DIR, NAPCAT_ZIP)
+  try {
+    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+      `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${NAPCAT_URL}' -OutFile '${zipPath}' -UseBasicParsing;` +
+      `if ((Get-Item '${zipPath}').Length -lt 50000000) { throw 'download incomplete' }`,
+    ], { stdio: 'pipe' })
+    say('        下载完成')
+  } catch (e) {
+    say('        [!] 下载失败（GitHub 连不上 / 磁盘不够）')
+    say('            插件已经装好了，NapCat 可以之后再装：')
+    say('              https://github.com/HaireXe-d/dsh-qq-whale-setup')
+    return { ok: false, reason: '下载失败' }
+  }
+
+  // 解压
+  say('        解压…')
+  try {
+    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+      `Expand-Archive -LiteralPath '${zipPath}' -DestinationPath '${path.join(NAPCAT_DIR, 'app')}' -Force`,
+    ], { stdio: 'pipe' })
+    try { fs.rmSync(zipPath, { force: true }) } catch { /* 删不掉留着 */ }
+    say('        解压完成')
+  } catch (e) {
+    say('        [!] 解压失败：' + String(e?.message ?? e).slice(0, 120))
+    return { ok: false, reason: '解压失败' }
+  }
+
+  writeNapcatConfig()
+  say('        配置已就绪（WebUI 密码钉死为 ' + WEBUI_TOKEN + '）')
+
+  // 开机自启（失败不影响使用）
+  try {
+    const startup = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+    if (fs.existsSync(startup)) {
+      const lnk = path.join(startup, 'NapCat.lnk')
+      execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        `$w=New-Object -ComObject WScript.Shell; $l=$w.CreateShortcut('${lnk}');` +
+        `$l.TargetPath='${path.join(NAPCAT_DIR, 'start-napcat.bat')}';` +
+        `$l.WorkingDirectory='${path.join(NAPCAT_DIR, 'app')}'; $l.WindowStyle=7; $l.Save()`,
+      ], { stdio: 'pipe' })
+      say('        已设为开机自启')
+    }
+  } catch { say('        （开机自启没设上，不影响使用）') }
+
+  return { ok: true }
+}
+
+let napcat = { ok: false, skipped: true }
+try { napcat = await setupNapcat() } catch (e) {
+  say('        [!] 装 NapCat 时出错：' + String(e?.message ?? e).slice(0, 160))
+  say('            插件本身已经装好，NapCat 可以之后再装。')
+}
+
 say('  装好了')
 say('  ' + '='.repeat('养鱼 · QQ'.length + 12))
 say('')
-say('  1. 完整退出 DSH（托盘也要退）再启动')
-say('  2. DSH → 设置 →「QQ」→ 扫码登录')
-say('  3. 登录后，总控制台里就能选它')
+if (napcat.ok) {
+  say('  NapCat 也装好了 —— 接下来：')
+  say('')
+  say('  1. 启动 NapCat（第一次要手动点一下；之后开机自启）')
+  say(`       ${path.join(path.parse(process.cwd()).root, 'NapCat', 'start-napcat.bat')}`)
+  say('       等 20~30 秒，看到 WebUI 就绪')
+  say('  2. 完整退出 DSH（托盘也要退）再启动')
+  say('  3. DSH → 设置 →「养鱼 · QQ」→ 点「扫码登录」')
+  say('  4. 手机 QQ 扫一下，在手机上确认')
+  say('  5. 填上「主人的 QQ 号」')
+} else if (napcat.skipped) {
+  say('  接下来：')
+  say('  1. 完整退出 DSH（托盘也要退）再启动')
+  say('  2. DSH → 设置 →「养鱼 · QQ」→ 扫码登录')
+} else {
+  say('  插件装好了，但 NapCat 没装成。扫码之前要先有它：')
+  say('')
+  say('    https://github.com/HaireXe-d/dsh-qq-whale-setup')
+  say('')
+  say('  装完再：完整退出 DSH → 重启 → 设置 →「养鱼 · QQ」→ 扫码登录')
+}
 say('')

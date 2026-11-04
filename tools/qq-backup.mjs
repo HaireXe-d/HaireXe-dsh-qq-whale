@@ -38,6 +38,23 @@ const FILES = [
   [path.join(DSH, 'whale-diary-private.md'), 'dsh/whale-diary-private.md'],
   [path.join(DSH, 'whale-rules.md'), 'dsh/whale-rules.md'],
 
+  // ── 共享的设置和"她现在在哪个对话"（2026-11-04 晚补）──
+  //   ⚠️ 这两个不带上，恢复之后会出现：
+  //     · 作息/口味回到默认（B站 改过的没了）
+  //     · 换了个新对话 id → 她"忘了刚才聊到哪"
+  //   都属于"复活了但不像原来那个人" ✗
+  [path.join(DSH, 'whale-habits.json'), 'dsh/whale-habits.json'],
+  [path.join(DSH, 'whale-body.json'), 'dsh/whale-body.json'],
+  [path.join(DSH, 'whale-session.json'), 'dsh/whale-session.json'],
+
+  // ── B 站那边的（两个入口一起用时才有，没有就跳过）──
+  //   主人问「和哔站养鱼在桌面创建一个备份」——
+  //   既然一份备份代表"整条鱼"，B 站的登录状态和设置也得在里面 ✓
+  [path.join(DSH, 'bili-whale.config.json'), 'dsh/bili-whale.config.json'],
+  [path.join(AI, 'credentials.json'), 'bili-ai/credentials.json'],
+  [path.join(AI, 'quota.json'), 'bili-ai/quota.json'],
+  [path.join(AI, 'dm-await-state.json'), 'bili-ai/dm-await-state.json'],
+
   // ── QQ 自己的设置 ──
   //   ⚠️ 2026-11-04 修：备份包的相对路径必须和源路径结构**完全一致**，
   //     否则恢复时会拷到错的位置（这里原来少了 channels/ 这一层，
