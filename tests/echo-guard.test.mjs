@@ -2,8 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeHistory } from '../lib/poller.js'
 
-const ME = '2584946746'
-const OWNER = '2040367971'
+const ME = '10001'
+const OWNER = '20002'
 
 const his = { message_id: 1, time: 1, sender: { user_id: OWNER, nickname: '主人' }, message: [{ type: 'text', data: { text: '在吗' } }] }
 const minePostType = { message_id: 2, time: 2, post_type: 'message_sent', message_sent_type: 'self', sender: { user_id: OWNER }, message: [{ type: 'text', data: { text: '我发的' } }] }

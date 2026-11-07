@@ -20,8 +20,8 @@ import { normalizeGroupOpts } from '../lib/group.js'
 import { createPendingStore } from '../lib/pending.js'
 import { createReplySender } from '../lib/reply-sender.js'
 
-const ME = '2584946746'
-const OWNER = '2040367971'
+const ME = '10001'
+const OWNER = '20002'
 const G = '123456789'
 
 function tmpHome() {
@@ -132,7 +132,8 @@ test('回话文件里写 [群:xxx] → 走 sendGroup；没写 → 走私信', as
   }
   const sender = createReplySender({
     ob, ownerId: OWNER, workDir, fileName: 'dm-reply-qq.txt',
-    readConfig: () => ({ reply: { maxLines: 6, gapMs: 0 } }),
+    // ⚠️ 2026-11-07：这个群得是**主人邀请的**，不然会被拦下（规矩：群聊只有主人能邀请）
+    readConfig: () => ({ reply: { maxLines: 6, gapMs: 0 }, group: { listen: true, groups: [{ id: G, invitedBy: 'owner' }] } }),
     log: () => {},
   })
   const r = await sender.tick()
@@ -156,4 +157,77 @@ test('群号写错了（不是 5–16 位）→ 当成普通文字，不乱发',
   })
   await sender.tick()
   assert.equal(toGroup.length, 0)
+})
+
+
+test('回复文件写了名单外的群 → 一条都不发到群里，改成私信告诉他', async () => {
+  const dshHome = tmpHome()
+  const workDir = path.join(dshHome, 'whale-work')
+  const file = path.join(workDir, 'dm-reply-qq.txt')
+  fs.writeFileSync(file, `[群:555555555] 我不该去这个群\n群里说一句\n`, 'utf8')
+
+  const toGroup = []
+  const toPrivate = []
+  const ob = {
+    sendGroup: async (gid, text) => { toGroup.push({ gid, text }); return { message_id: 1 } },
+    sendPrivate: async (uid, text) => { toPrivate.push({ uid, text }); return { message_id: 2 } },
+  }
+  const sender = createReplySender({
+    ob, ownerId: OWNER, workDir,
+    // 名单里只有 G，而且是主人邀请的
+    readConfig: () => ({ reply: { gapMs: 0 }, group: { listen: true, groups: [{ id: G, invitedBy: 'owner' }] } }),
+    log: () => {},
+  })
+  const r = await sender.tick()
+  // 名单外那条被拦下 → 只有私信那句真的发出去
+  assert.equal(r.sent, 1)
+  assert.equal(r.blocked, 1)
+  assert.equal(toGroup.length, 0, '名单外的群一个字都不许发')
+  assert.equal(toPrivate.length, 2)   // ① 拦截通知 ② 那句正常私信
+  assert.match(toPrivate[0].text, /没发出去/)
+  assert.match(toPrivate[0].text, /555555555/)
+  assert.equal(toPrivate[1].text, '群里说一句')
+})
+
+test('群不是主人邀请的 → 也拦（就算在名单里）', async () => {
+  const dshHome = tmpHome()
+  const workDir = path.join(dshHome, 'whale-work')
+  fs.writeFileSync(path.join(workDir, 'dm-reply-qq.txt'), `[群:${G}] 想说一句\n`, 'utf8')
+  const toGroup = []
+  const toPrivate = []
+  const ob = {
+    sendGroup: async (gid) => { toGroup.push(gid); return { message_id: 1 } },
+    sendPrivate: async (uid, text) => { toPrivate.push({ uid, text }); return { message_id: 2 } },
+  }
+  const sender = createReplySender({
+    ob, ownerId: OWNER, workDir,
+    readConfig: () => ({ reply: { gapMs: 0 }, group: { listen: true, groups: [{ id: G, invitedBy: 'someone-else' }] } }),
+    log: () => {},
+  })
+  const r = await sender.tick()
+  assert.equal(r.sent, 0)
+  assert.equal(r.blocked, 1)
+  assert.equal(toGroup.length, 0)
+  assert.match(toPrivate[0].text, /不是主人邀请/)
+})
+
+test('群聊总开关关着 → 群回话一条也不发（私信照旧）', async () => {
+  const dshHome = tmpHome()
+  const workDir = path.join(dshHome, 'whale-work')
+  fs.writeFileSync(path.join(workDir, 'dm-reply-qq.txt'), `[群:${G}] 群里\n私信一句\n`, 'utf8')
+  const toGroup = []
+  const toPrivate = []
+  const ob = {
+    sendGroup: async (gid) => { toGroup.push(gid); return { message_id: 1 } },
+    sendPrivate: async (uid, text) => { toPrivate.push({ uid, text }); return { message_id: 2 } },
+  }
+  const sender = createReplySender({
+    ob, ownerId: OWNER, workDir,
+    readConfig: () => ({ reply: { gapMs: 0 }, group: { listen: false, groups: [{ id: G, invitedBy: 'owner' }] } }),
+    log: () => {},
+  })
+  const r = await sender.tick()
+  assert.equal(toGroup.length, 0)
+  assert.equal(r.sent, 1)
+  assert.equal(toPrivate[toPrivate.length - 1].text, '私信一句')
 })

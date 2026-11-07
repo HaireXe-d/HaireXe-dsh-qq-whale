@@ -25,7 +25,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { buildChannel, DEFAULTS } from '../lib/index.js'
 
-const OWNER = '2040367971'
+const OWNER = '20002'
 let passed = 0
 const check = async (name, fn) => {
   try { await fn(); passed += 1; console.log(`  ✓ ${name}`) } catch (e) { console.log(`  ✗ ${name}\n    ${e.message}`); process.exitCode = 1 }

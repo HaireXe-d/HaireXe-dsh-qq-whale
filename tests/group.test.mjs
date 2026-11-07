@@ -3,11 +3,12 @@ import assert from 'node:assert/strict'
 import {
   normalizeGroupOpts, groupAllowed, atTargets, classifyGroupMessage,
   messagePlainText, pickGroupMessages, splitGroupTag, GROUP_DEFAULTS,
+  canReplyToGroup, groupInvitedByOwner,
 } from '../lib/group.js'
 import { createGroupPoller } from '../lib/poller.js'
 
-const ME = '2584946746'
-const OWNER = '2040367971'
+const ME = '10001'
+const OWNER = '20002'
 const G1 = '123456789'
 const G2 = '987654321'
 
@@ -215,4 +216,71 @@ test('群轮询：接口不支持（retcode 1404）要标出来，不是当成�
   const r = await p.pollOnce()
   assert.equal(r.ok, false)
   assert.equal(r.unsupported, true)
+})
+
+
+// ── 主人 2026-11-07：「群聊只有我能邀请你，你不能乱进」──────────────────
+
+test('名单里的群如果不是主人邀请的 → 她不理', () => {
+  const g = normalizeGroupOpts({
+    listen: true,
+    groups: [{ id: G1, invitedBy: 'owner' }, { id: G2, invitedBy: 'someone-else' }],
+  })
+  assert.equal(groupAllowed(g, G1), true)
+  assert.equal(groupAllowed(g, G2), false)
+  // 老配置没记来源 → 当主人自己配的处理（备份里就是他配的）
+  const legacy = normalizeGroupOpts({ listen: true, groups: [{ id: G1 }] })
+  assert.equal(groupAllowed(legacy, G1), true)
+})
+
+test('ownerOnly 关掉 = 只要在名单里就认（保险解除）', () => {
+  const g = normalizeGroupOpts({
+    listen: true, ownerOnly: false,
+    groups: [{ id: G2, invitedBy: 'someone-else' }],
+  })
+  assert.equal(groupAllowed(g, G2), true)
+})
+
+test('别人 @ 我，但那个群不是主人邀请的 → 不理（带上准确原因）', () => {
+  const g = normalizeGroupOpts({ listen: true, groups: [{ id: G2, invitedBy: 'someone-else' }] })
+  const v = classifyGroupMessage(gm({ group: G2, from: '111', at: [ME] }), { selfId: ME, ownerId: OWNER, opts: g })
+  assert.equal(v.hit, false)
+  assert.match(v.reason, /不是主人邀请/)
+})
+
+test('回话想发到名单外的群 → canReplyToGroup 拒绝', () => {
+  const g = normalizeGroupOpts({ listen: true, groups: [{ id: G1, invitedBy: 'owner' }] })
+  const r1 = canReplyToGroup(g, G1)
+  assert.equal(r1.ok, true)
+  const r2 = canReplyToGroup(g, G2)
+  assert.equal(r2.ok, false)
+  assert.match(r2.reason, /不在名单里/)
+  const r3 = canReplyToGroup(g, '')
+  assert.equal(r3.ok, false)
+})
+
+test('回话想发到「不是主人邀请」的群 → 拒绝', () => {
+  const g = normalizeGroupOpts({ listen: true, groups: [{ id: G1, invitedBy: 'someone-else' }] })
+  const r = canReplyToGroup(g, G1)
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /不是主人邀请/)
+})
+
+test('群聊总开关关着 → 一条都不往群里发', () => {
+  const g = normalizeGroupOpts({ listen: false, groups: [{ id: G1, invitedBy: 'owner' }] })
+  const r = canReplyToGroup(g, G1)
+  assert.equal(r.ok, false)
+  assert.match(r.reason, /总开关/)
+})
+
+test('群被单独关掉 → 不往那儿发', () => {
+  const g = normalizeGroupOpts({ listen: true, groups: [{ id: G1, invitedBy: 'owner', enabled: false }] })
+  assert.equal(canReplyToGroup(g, G1).ok, false)
+})
+
+test('groupInvitedByOwner：没有来源的老条目算主人，有的照实算', () => {
+  assert.equal(groupInvitedByOwner({ ownerOnly: true }, { invitedBy: '' }), true)
+  assert.equal(groupInvitedByOwner({ ownerOnly: true }, { invitedBy: 'owner' }), true)
+  assert.equal(groupInvitedByOwner({ ownerOnly: true }, { invitedBy: 'x' }), false)
+  assert.equal(groupInvitedByOwner({ ownerOnly: false }, { invitedBy: 'x' }), true)
 })

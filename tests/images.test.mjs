@@ -6,8 +6,8 @@ import path from 'node:path'
 import { normalizeHistory } from '../lib/poller.js'
 import { sniffImageExt, saveIncomingImages } from '../lib/incoming-images.js'
 
-const ME = '2584946746'
-const OWNER = '2040367971'
+const ME = '10001'
+const OWNER = '20002'
 
 const imgMsg = (id, extra = {}) => ({
   post_type: 'message',
