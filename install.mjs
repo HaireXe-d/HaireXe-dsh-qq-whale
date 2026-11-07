@@ -275,14 +275,29 @@ function writeNapcatConfig() {
     parseMultMsg: false,
   })
   // 启动脚本：**必须带 NAPCAT_WEBUI_SECRET_KEY**，否则密码又被换掉
-  fs.writeFileSync(path.join(NAPCAT_DIR, 'start-napcat.bat'), [
-    '@echo off',
-    'setlocal',
-    `cd /d "${NAPCAT_DIR}\\app"`,
-    `set NAPCAT_WEBUI_SECRET_KEY=${WEBUI_TOKEN}`,
-    `"${NAPCAT_DIR}\\app\\node.exe" "${NAPCAT_DIR}\\app\\index.js" %*`,
-    '',
-  ].join('\r\n'), 'ascii')
+  //
+  // ⚠️ 2026-11-04 晚（主人：「我重启了，你是不是在耍我」）：
+  //   这里原来**每次都无条件覆盖** start-napcat.bat。
+  //   而那个文件里有自动重启循环（NapCat 偶尔起来就退出，没循环就一直是死的）——
+  //   我一跑 install.mjs 就把它覆盖成"跑一次就结束"的简版 ✗
+  //   于是重启后 NapCat 起不来，界面上就是「连不上 NapCat WebUI」。
+  //
+  //   现在：**已经有就不动它**（用户手里的那份可能被改过、有循环）；
+  //         没有才生成，而且生成的版本自带重试 ✓
+  const batFile = path.join(NAPCAT_DIR, 'start-napcat.bat')
+  if (!fs.existsSync(batFile)) {
+    fs.writeFileSync(batFile, [
+      '@echo off',
+      'setlocal',
+      `cd /d "${NAPCAT_DIR}\\app"`,
+      `set NAPCAT_WEBUI_SECRET_KEY=${WEBUI_TOKEN}`,
+      // 循环：NapCat 偶尔启动即退出，没重试就一直是死的
+      ':loop',
+      `"${NAPCAT_DIR}\\app\\node.exe" "${NAPCAT_DIR}\\app\\index.js" %*`,
+      'if errorlevel 1 timeout /t 5 /nobreak >nul & goto loop',
+      '',
+    ].join('\r\n'), 'ascii')
+  }
 }
 
 async function setupNapcat() {

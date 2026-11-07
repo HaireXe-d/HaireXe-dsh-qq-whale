@@ -60,6 +60,11 @@ test('路由表声明了 status / test / poke', () => {
     'GET /auth/quick',
     'GET /backup/inspect',
     'GET /format',
+    // ⚠️ 2026-11-07 群聊（主人：「把你拉进群聊」）—— 三条新路由
+    //   GET  /groups          我加过的群 + 现在配了哪些
+    //   POST /groups/add      把一个群加进名单
+    //   POST /groups/remove   从名单里拿掉
+    'GET /groups',
     'GET /pending',
     'GET /status',
     'GET /stickers',
@@ -72,6 +77,8 @@ test('路由表声明了 status / test / poke', () => {
     'POST /backup/export',
     'POST /backup/import',
     'POST /format/pin',
+    'POST /groups/add',
+    'POST /groups/remove',
     'POST /pending/approve',
     'POST /pending/drop',
     'POST /pending/revise',

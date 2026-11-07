@@ -8,7 +8,7 @@ import { createPendingStore, shouldAutoReply } from '../lib/pending.js'
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'qq-pending-'))
 
 test('主人自己说的 → 自动回；别人说的 → 不能自动回', () => {
-  const ownerId = '30003'
+  const ownerId = '3546626108951012'
   assert.deepEqual(shouldAutoReply({ fromUserId: ownerId, ownerId }), { auto: true, reason: 'owner' })
   assert.deepEqual(shouldAutoReply({ fromUserId: '10001', ownerId }), { auto: false, reason: 'other' })
 })

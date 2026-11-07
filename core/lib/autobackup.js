@@ -71,7 +71,26 @@ function readJsonSafe(f) {
   try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch { return null }
 }
 
-/** 人格的指纹：mtime + 大小。变了才备份 */
+/**
+ * 人格的指纹：mtime + 大小。变了才备份。
+ *
+ * ⚠️⚠️ 2026-11-04 19:33 **今晚把主人人设覆盖掉的那次就是从这里来的**：
+ *
+ *   17:31:34 有人把 persona.md 写成了 12 字节（就四个字「测试人格」）。
+ *   这个模块看见「人格改过了」，就把那份 **12 字节**的当成新人格，
+ *   覆盖进了桌面的备份 —— 于是「活文件」和「备份」两边一起变成坏的 ✗
+ *
+ *   备份的职责是**防丢**，不是**跟着改**。人格被别人（或自己）误写成垃圾时，
+ *   备份应该**挡住**它，而不是陪着一起烂。
+ *
+ *   现在加了保命闸：
+ *     · 小于 MIN_PERSONA_BYTES 的 —— **不算人格**，拒绝备份，并保留旧备份 ✓
+ *     · 比上一份少了 MAX_SHRINK_RATIO 以上 —— 大概率是被清空/截断，同样拒绝 ✓
+ *       （真想大幅改人设时，先手动备份一次，或者删掉 .last-auto-backup.json 再让它备）
+ */
+const MIN_PERSONA_BYTES = 200
+const MAX_SHRINK_RATIO = 0.5     // 比上次少了一半以上就当成事故
+
 function personaStamp(home) {
   const p = path.join(home, '.bili-ai', 'persona.md')
   try {
@@ -94,9 +113,37 @@ export function autoBackupState({ home = os.homedir(), name = '' } = {}) {
   if (!stamp) return { needed: false, reason: '还没有人格（persona.md 不存在）', exist: false, dir }
   const exist = fs.existsSync(dir)
   const last = readJsonSafe(path.join(dir, STAMP))
-  if (!exist) return { needed: true, reason: `桌面上还没有「${path.basename(dir)}」`, exist: false, dir }
+  if (!exist) {
+    // ⚠️ 2026-11-04：连脏数据都不放过 —— 桌面上没备份时才建，
+    //   但如果人格本身小得不像话（被误写成几个字），宁可**不建**，也别拿垃圾开局 ✓
+    if (stamp.size < MIN_PERSONA_BYTES) {
+      return { needed: false, reason: `人格只有 ${stamp.size} 字节，太小了不像人设，先不备份（防误写）`, exist: false, dir }
+    }
+    return { needed: true, reason: `桌面上还没有「${path.basename(dir)}」`, exist: false, dir }
+  }
   if (!last) return { needed: true, reason: '有备份目录但没有标记（可能是手动备份留下的）', exist: true, dir }
   if (last.personaMtime !== stamp.mtime || last.personaSize !== stamp.size) {
+    // ⚠️ 2026-11-04 19:33 保命闸：这就是今晚人设被覆盖的那条路。
+    //   备份要**挡住**被误写的垃圾，不能陪着一起烂 ✗
+    if (stamp.size < MIN_PERSONA_BYTES) {
+      return {
+        needed: false,
+        reason: `人格被改成了 ${stamp.size} 字节（正常至少 ${MIN_PERSONA_BYTES}），像是被误写 —— 拒绝覆盖备份`,
+        exist: true,
+        dir,
+        blocked: true,
+      }
+    }
+    const prevSize = Number(last.personaSize) || 0
+    if (prevSize > 0 && stamp.size < prevSize * MAX_SHRINK_RATIO) {
+      return {
+        needed: false,
+        reason: `人格从 ${prevSize} 字节掉到 ${stamp.size}（少了一半以上），像是被截断 —— 拒绝覆盖备份`,
+        exist: true,
+        dir,
+        blocked: true,
+      }
+    }
     return { needed: true, reason: '人格改过了', exist: true, dir }
   }
   return { needed: false, reason: '人格没变，不用重复备份', exist: true, dir }

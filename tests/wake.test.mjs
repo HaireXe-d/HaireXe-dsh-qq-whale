@@ -16,7 +16,7 @@ function stubController({ fail = false } = {}) {
   }
 }
 
-const msg = (id, text) => ({ userId: '30003', messageId: id, nickname: '主人', text })
+const msg = (id, text) => ({ userId: '3546626108951012', messageId: id, nickname: '主人', text })
 
 test('收到一条私信 → 投进会话，内容是「谁说了什么」，并带上完整人设和日记指引', async () => {
   const c = stubController()

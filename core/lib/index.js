@@ -119,7 +119,16 @@ export default {
   name: 'dsh-whale-core',
   // ⚠️ inject 只能写成一个数组字面量（见 dsh-bili-whale/lib/index.js 里 2026-10-18 那个坑：
   //    写两个 inject 键，后者覆盖前者 → 服务没注入 → 静默不干活 ✗）
-  inject: ['webServer', 'connection'],
+  //
+  // ⚠️ 2026-11-04 晚（第二层真因）：原来这里只有 ['webServer','connection']，
+  //   **也漏了 sessionController**。
+  //   通道是 **core 调 `entry.start(ctx)` 起的**（见下面 startChannel），
+  //   所以通道拿到的 ctx 就是 core 这个 ctx —— core 没要的服务，通道那边永远是 undefined ✗
+  //   于是 QQ 就算自己 inject 了 sessionController 也没用（两个是独立插件，
+  //   DSH 不会把没 inject 的服务往上递）。
+  //   证据：qq-wake-error.txt 一整夜都写「没投出去」= waker 从来没建成，
+  //   而且**不报错**（可选链吞掉了）。
+  inject: ['sessionController', 'webServer', 'connection'],
   apply(ctx) {
     const DSH_HOME = process.env.DSH_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '.', '.dsh')
     const log = (m) => { try { console.log(m) } catch {} }

@@ -46,7 +46,7 @@ const DSH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-qq-live-'))
 const cfg = {
   ...DEFAULTS,
   onebot: { baseUrl, token: '' },
-  owner: { uin: '30003' },
+  owner: { uin: '3546626108951012' },
   listen: { intervalSec: 0.2, backoffMaxSec: 1 },
 }
 
@@ -76,7 +76,7 @@ await check('轮询器连上了假 OneBot', async () => {
 })
 
 await check('假 OneBot 推来一条私信 → 轮询器认出来了', async () => {
-  history = [{ message_id: 7, time: Math.floor(Date.now() / 1000), sender: { user_id: '30003', nickname: '主人' }, message: [{ type: 'text', data: { text: '在吗' } }] }]
+  history = [{ message_id: 7, time: Math.floor(Date.now() / 1000), sender: { user_id: '3546626108951012', nickname: '主人' }, message: [{ type: 'text', data: { text: '在吗' } }] }]
   const ok = await waitFor(() => {
     try {
       const s = JSON.parse(fs.readFileSync(path.join(DSH_HOME, 'whale-channels', 'qq-state.json'), 'utf8'))
@@ -89,16 +89,16 @@ await check('假 OneBot 推来一条私信 → 轮询器认出来了', async () 
 await check('通道能发私信（走真 OneBot 接口形状）', async () => {
   const { createOneBot } = await import('../lib/onebot.js')
   const ob = createOneBot({ baseUrl })
-  const data = await ob.sendPrivate('30003', '收到了')
+  const data = await ob.sendPrivate('3546626108951012', '收到了')
   assert.ok(data?.message_id)
   const sent = received.find((r) => r.action === 'send_private_msg')
   assert.equal(sent.params.message, '收到了')
-  assert.equal(String(sent.params.user_id), '30003')
+  assert.equal(String(sent.params.user_id), '3546626108951012')
 })
 
 await check('戳一戳能用', async () => {
   const { createOneBot } = await import('../lib/onebot.js')
-  await createOneBot({ baseUrl }).sendPoke('30003')
+  await createOneBot({ baseUrl }).sendPoke('3546626108951012')
   assert.ok(received.some((r) => r.action === 'send_poke'))
 })
 

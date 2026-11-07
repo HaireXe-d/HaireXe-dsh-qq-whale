@@ -25,12 +25,12 @@ const readFile = (dir) => fs.readFileSync(path.join(dir, 'dm-reply-qq.txt'), 'ut
 test('2026-11-04 回归：一行一句，真的发出去（以前压根没人发）', async () => {
   const dir = tmp()
   const ob = fakeOb()
-  const s = createReplySender({ ob, ownerId: '10001', workDir: dir, readConfig: () => ({ reply: { gapMs: 0 } }) })
+  const s = createReplySender({ ob, ownerId: '2040367971', workDir: dir, readConfig: () => ({ reply: { gapMs: 0 } }) })
   writeFile(dir, '收到了\n这次真通了\n')
   const r = await s.tick()
   assert.equal(r.sent, 2)
   assert.deepEqual(ob.sent.map((x) => x.msg), ['收到了', '这次真通了'])
-  assert.equal(ob.sent[0].to, '10001')
+  assert.equal(ob.sent[0].to, '2040367971')
 })
 
 test('发成功之后文件清空（不然下一轮又发一遍）', async () => {
