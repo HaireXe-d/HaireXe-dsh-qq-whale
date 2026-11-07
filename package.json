@@ -1,6 +1,6 @@
 {
   "name": "dsh-qq-whale",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "养鱼的 QQ 通道：接 OneBot 11（NapCat / LLOneBot），收私信、发消息、戳一戳、扫码登录；别人发来的话先进待审队列，主人点头才回；群聊里主人 @ 她直接回，别人 @ 她先问主人。",
   "keywords": [
     "dsh",
