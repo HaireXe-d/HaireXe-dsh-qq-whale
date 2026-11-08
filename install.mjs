@@ -138,32 +138,62 @@ if (missingDeps.length) {
 
 if (missingDeps.length) {
   say('  [2.5] 装依赖：' + missingDeps.join(', ') + ' ...')
-  // ⚠️ 2026-11-04 晚（代码审查 + 实测）：新用户装依赖**必失败**，两个原因：
-  //   ① package.json 里原来有 peerDependencies.dsh-whale-core ——
-  //      npm 上没有这个包，三个 runner 全 404 ✗（那条声明已删）
-  //   ② shell:true 让 npm 走 cmd.exe，**中文/空格路径**被 8.3 短名 + GBK
-  //      重新编码 → ENOENT ...\package.json ✗
-  //      本机 HOME 就是「ZhuanZ（无密码）」，正是会中招的路径。
-  //   现在：不用 shell（Windows 上直接调 npm.cmd）+ --legacy-peer-deps 兜底 ✓
+  // ⚠️ 2026-11-08（独立使用自检抓到的）：Node 在 Windows 上**不能直接 spawn .cmd**
+  //
+  //   实测：execFileSync('npm.cmd', [...]) → spawnSync npm.cmd EINVAL
+  //   （Node 18.20+/20.12+ 起禁止不带 shell 直接 spawn 批处理文件，安全修复）
+  //
+  //   所以三种路子：
+  //     ① shell:true   → 中文/空格路径被 cmd.exe 的 GBK 编码搞坏 ✗
+  //     ② spawn .cmd   → EINVAL ✗
+  //     ③ **用 node 直接跑 npm 的 js 入口** → 既没有 shell，也没有 .cmd ✓
+  //
+  //   现在按 ③ → ② → ① 的顺序试，第一个成功就停。
   const isWin = process.platform === 'win32'
-  const runners = [
-    { cmd: isWin ? 'npm.cmd' : 'npm', args: ['install', '--omit=dev', '--no-audit', '--no-fund', '--legacy-peer-deps'] },
-    { cmd: isWin ? 'pnpm.cmd' : 'pnpm', args: ['install', '--prod'] },
-    { cmd: isWin ? 'corepack.cmd' : 'corepack', args: ['npm', 'install', '--omit=dev', '--legacy-peer-deps'] },
-  ]
+  const npmArgs = ['install', '--omit=dev', '--no-audit', '--no-fund', '--legacy-peer-deps']
+
+  // ③ 直接找 npm-cli.js（npm 的 JS 入口），用当前 node 跑它
+  const npmCliCandidates = []
+  if (isWin) {
+    const nodeDir = path.dirname(process.execPath)
+    npmCliCandidates.push(
+      path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+      path.join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    )
+    // 也在 PATH 里找 npm 的位置
+    try {
+      const which = execFileSync('where', ['npm'], { encoding: 'utf8' }).split(/\r?\n/)[0]?.trim()
+      if (which) {
+        npmCliCandidates.push(path.join(path.dirname(which), 'node_modules', 'npm', 'bin', 'npm-cli.js'))
+      }
+    } catch { /* 找不到就算了 */ }
+  }
+
+  const runners = []
+  for (const cli of npmCliCandidates) {
+    if (cli && fs.existsSync(cli)) {
+      runners.push({ how: 'node+npm-cli.js', cmd: process.execPath, args: [cli, ...npmArgs] })
+    }
+  }
+  runners.push({ how: 'npm.cmd', cmd: isWin ? 'npm.cmd' : 'npm', args: npmArgs, needsShellOnWin: true })
+  runners.push({ how: 'pnpm', cmd: isWin ? 'pnpm.cmd' : 'pnpm', args: ['install', '--prod'], needsShellOnWin: true })
+
   let ok = false
   let tried = []
   for (const r of runners) {
     try {
-      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', timeout: 180000 })
+      // ⚠️ .cmd 必须带 shell:true（否则 EINVAL）；npm-cli.js 走 node 不需要
+      const opts = { cwd: target, stdio: 'inherit', timeout: 180000 }
+      if (isWin && r.needsShellOnWin) opts.shell = true
+      execFileSync(r.cmd, r.args, opts)
       ok = true
+      say('        用 ' + r.how + ' 装好了')
       break
     } catch (e) {
-      tried.push(r.cmd)
-      // 把真实错误说出来 —— 原来只记命令名，用户完全不知道为啥失败
+      tried.push(r.how)
       const msg = String(e?.stderr ?? e?.message ?? '')
-        .split(/\r?\n/).filter((l) => /error|404|ENOENT/i.test(l)).slice(0, 2).join(' | ')
-      if (msg) say('        ' + r.cmd + ' 失败：' + msg.slice(0, 160))
+        .split(/\r?\n/).filter((l) => /error|404|ENOENT|EINVAL/i.test(l)).slice(0, 2).join(' | ')
+      if (msg) say('        ' + r.how + ' 失败：' + msg.slice(0, 160))
     }
   }
   if (!ok) {
