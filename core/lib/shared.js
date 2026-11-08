@@ -39,8 +39,18 @@ export const SHARED_DEFAULTS = {
   // ⚠️ primary 是**历史遗留字段**，只在展示为主的场景用到；
   //   一条鱼两个入口里没有「主次」，能力判断一律不看它 ✗
   primary: 'bili',
-  dm: 'bili',             // 私聊走哪个入口：bili | qq —— **只能一个**
-  dynamic: 'bili',        // 发动态走哪个入口：bili | qq —— **只能一个**
+  // ⚠️⚠️ 2026-11-07 晚（trace-message-flow 实跑抓到的致命 bug）：
+  //   dm / dynamic 原来写死 'bili'。
+  //   只装 QQ 的用户 shared.json 不存在 → 走这里 → dm='bili'
+  //   → capabilitiesFor('qq') 得到 dm=false
+  //   → 收到消息后「规则拦下」直接 return → **一条都不投递** ✗
+  //
+  //   实测日志：
+  //     [分拣] 规则拦下（私聊归另一边，why=只能收消息（私聊和动态都在另一个平台上））
+  //
+  //   现在写成空串 = 「没指定，按装了谁自动定」（见 normalizeShared 里 resolve）
+  dm: '',                 // 私聊走哪个入口：bili | qq —— **只能一个**；空 = 自动
+  dynamic: '',            // 发动态走哪个入口：同上
   share: true,            // 分享视频总开关（B 站独有的能力）
 }
 
@@ -54,10 +64,37 @@ function checkChannel(v, field) {
 }
 
 /** 规整一份配置（缺的补默认，非法值直接抛 —— 宁可报错也别悄悄用默认 ✗） */
-export function normalizeShared(input) {
+export function normalizeShared(input, options) {
   const s = { ...SHARED_DEFAULTS, ...(input ?? {}) }
   s.memory = { ...SHARED_DEFAULTS.memory, ...(input?.memory ?? {}) }
   s.wake = { ...SHARED_DEFAULTS.wake, ...(input?.wake ?? {}) }
+
+  // ⚠️ 2026-11-07 晚：dm / dynamic 为空 = 没指定 → 按「装了谁」自动定
+  //   · 只装 QQ   → qq
+  //   · 只装 B站  → bili
+  //   · 两个都装  → bili（保持原来的行为，主人一直这么用的）
+  //   options 不传时当作「两个都可能装了」→ 仍取 bili，向后兼容 ✓
+  const cfgd = options && options.configured ? options.configured : null
+  const autoTarget = (cfgd && cfgd.bili === false) ? 'qq' : 'bili'
+  if (!s.dm) s.dm = autoTarget
+  if (!s.dynamic) s.dynamic = autoTarget
+
+  // ⚠️ 2026-11-07 晚补的兜底：
+  //   用户机器上可能残留一份 shared.json 写着 dm:'bili'（旧版本默认值写进去的），
+  //   但那个人**根本没装 B站** —— 那 dm 就指向一个不存在的通道，
+  //   QQ 收到消息照样被「规则拦下」✗
+  //   所以：指定的通道不存在时，自动改指到存在的那个。
+  if (cfgd) {
+    if (s.dm && cfgd[s.dm] === false) {
+      const fallback = s.dm === 'bili' ? 'qq' : 'bili'
+      if (cfgd[fallback] !== false) s.dm = fallback
+    }
+    if (s.dynamic && cfgd[s.dynamic] === false) {
+      const fallback = s.dynamic === 'bili' ? 'qq' : 'bili'
+      if (cfgd[fallback] !== false) s.dynamic = fallback
+    }
+  }
+
   checkChannel(s.primary, '主通道 primary')
   checkChannel(s.dm, '私聊 dm')
   checkChannel(s.dynamic, '发动态 dynamic')
@@ -100,7 +137,10 @@ export function sharedWakeWindows({ shared, biliNightWindows = [] } = {}) {
  * @returns {{ on, dm, share, dynamic, full, why }}
  */
 export function capabilitiesFor(id, { shared, enabled = {}, configured = {} } = {}) {
-  const s = normalizeShared(shared)
+  // ⚠️ 2026-11-07 晚：必须把 configured 传给 normalizeShared ——
+  //   否则 dm/dynamic 为空时不知道该退回哪个通道，
+  //   单装 QQ 的用户又会算成 dm=false（收到消息被拦）✗
+  const s = normalizeShared(shared, { configured })
   // 2026-11-04 主人要求：「只配置了哔站的话总控制台里就选不了 QQ」
   //   没装的通道（configured[id] !== true）**不能**被算成能干活的 ——
   //   否则控制台会把私聊/动态派给一个根本不存在的入口 ✗
