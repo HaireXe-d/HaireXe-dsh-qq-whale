@@ -104,7 +104,9 @@ test('多条消息按顺序投（不会乱序）', async () => {
   const c = stubController()
   const w = createQqWaker({ controller: c, dshHome: tmp(), cwd: tmp(), log: () => {} })
   await Promise.all([w.deliver(msg(1, '第一')), w.deliver(msg(2, '第二')), w.deliver(msg(3, '第三'))])
-  const texts = c.calls.prompt.map((p) => String(p.content[0].text).split('刚给你发私信：')[1]?.split('（回话照旧')[0]?.trim())
+  // 2026-11-08：提示改成「———— 怎么让她的话送到主人 QQ ————」分隔，
+  //   这里用 ———— 前的那段文字比较
+  const texts = c.calls.prompt.map((p) => String(p.content[0].text).split('刚给你发私信：')[1]?.split('————')[0]?.trim())
   assert.deepEqual(texts, ['第一', '第二', '第三'])
 })
 
