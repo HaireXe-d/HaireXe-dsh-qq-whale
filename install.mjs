@@ -138,19 +138,33 @@ if (missingDeps.length) {
 
 if (missingDeps.length) {
   say('  [2.5] 装依赖：' + missingDeps.join(', ') + ' ...')
+  // ⚠️ 2026-11-04 晚（代码审查 + 实测）：新用户装依赖**必失败**，两个原因：
+  //   ① package.json 里原来有 peerDependencies.dsh-whale-core ——
+  //      npm 上没有这个包，三个 runner 全 404 ✗（那条声明已删）
+  //   ② shell:true 让 npm 走 cmd.exe，**中文/空格路径**被 8.3 短名 + GBK
+  //      重新编码 → ENOENT ...\package.json ✗
+  //      本机 HOME 就是「ZhuanZ（无密码）」，正是会中招的路径。
+  //   现在：不用 shell（Windows 上直接调 npm.cmd）+ --legacy-peer-deps 兜底 ✓
+  const isWin = process.platform === 'win32'
   const runners = [
-    { cmd: 'npm', args: ['install', '--omit=dev', '--no-audit', '--no-fund'] },
-    { cmd: 'pnpm', args: ['install', '--prod'] },
-    { cmd: 'corepack', args: ['npm', 'install', '--omit=dev'] },
+    { cmd: isWin ? 'npm.cmd' : 'npm', args: ['install', '--omit=dev', '--no-audit', '--no-fund', '--legacy-peer-deps'] },
+    { cmd: isWin ? 'pnpm.cmd' : 'pnpm', args: ['install', '--prod'] },
+    { cmd: isWin ? 'corepack.cmd' : 'corepack', args: ['npm', 'install', '--omit=dev', '--legacy-peer-deps'] },
   ]
   let ok = false
   let tried = []
   for (const r of runners) {
     try {
-      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', shell: true, timeout: 180000 })
+      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', timeout: 180000 })
       ok = true
       break
-    } catch (e) { tried.push(r.cmd) }
+    } catch (e) {
+      tried.push(r.cmd)
+      // 把真实错误说出来 —— 原来只记命令名，用户完全不知道为啥失败
+      const msg = String(e?.stderr ?? e?.message ?? '')
+        .split(/\r?\n/).filter((l) => /error|404|ENOENT/i.test(l)).slice(0, 2).join(' | ')
+      if (msg) say('        ' + r.cmd + ' 失败：' + msg.slice(0, 160))
+    }
   }
   if (!ok) {
     console.error('')
@@ -192,19 +206,79 @@ manifest.dsh.profile.bundles ??= []
 
 manifest.dependencies[PKG] = 'link:' + target.replace(/\\/g, '/')
 if (!manifest.dsh.profile.bundles.includes(PKG)) manifest.dsh.profile.bundles.push(PKG)
+
+// ⚠️⚠️ 2026-11-08（独立使用自检抓到的）：
+//   原来只登记了 dsh-qq-whale，**没登记 core** ——
+//   插件启动时会自己挂一次 core（日志里有「已挂上自带的 core」），所以能用，
+//   但那是**兜底路径**，不是正规路径：
+//     · core 提供的 /dsh-whale/api/* 依赖单例锁，两个入口都装时可能让位给 B站 那份
+//     · profile 里没登记 → 卸载/升级时清理不干净
+//     · DSH 的插件管理界面看不到它
+//   现在一起登记，顺序放在 qq **前面**（core 先加载，qq 挂上去才有地方）✓
+const CORE_PKG = 'dsh-whale-core'
+manifest.dependencies[CORE_PKG] = 'link:' + path.join(target, 'core').replace(/\\/g, '/')
+if (!manifest.dsh.profile.bundles.includes(CORE_PKG)) {
+  const i = manifest.dsh.profile.bundles.indexOf(PKG)
+  if (i >= 0) manifest.dsh.profile.bundles.splice(i, 0, CORE_PKG)
+  else manifest.dsh.profile.bundles.push(CORE_PKG)
+}
+
 fs.writeFileSync(pkgFile, JSON.stringify(manifest, null, 2) + '\n')
 say('  [3/3] 已登记到 profile bundles  ✓')
 
 const linkPath = path.join(PROFILE_DIR, 'node_modules', PKG)
 fs.mkdirSync(path.dirname(linkPath), { recursive: true })
+  // ⚠️ 2026-11-04 晚（代码审查 + 实测）：原来用 execFileSync('cmd', ['/c','mklink','/J', ...])
+  //   参数是**用空格拼起来**交给 cmd 的，路径一带空格就被拆成多个参数 ✗
+  //   本机 HOME「ZhuanZ（无密码）」里就有空格 —— 必然踩。
+  //   改用 Node 原生 symlinkSync：Windows 上指定 'junction' 不需要管理员，
+  //   而且完全不经过 cmd 的参数解析 ✓
+  let linked = false
+  try {
+    fs.mkdirSync(path.dirname(linkPath), { recursive: true })
+    if (fs.existsSync(linkPath)) {
+      try { fs.rmSync(linkPath, { recursive: true, force: true }) } catch { /* */ }
+    }
+    fs.symlinkSync(target, linkPath, 'junction')
+    linked = true
+    say(`        链接好了：${path.basename(linkPath)}`)
+  } catch (e) {
+    // 没有权限建链接 → 直接拷一份（慢一点，但能跑）
+    try {
+      fs.cpSync(target, linkPath, { recursive: true })
+      linked = true
+      say(`        没有建链接权限，改成直接拷了一份：${path.basename(linkPath)}`)
+    } catch (e2) {
+      say(`        [!] 链接失败：${String(e2?.message ?? e2).slice(0, 120)}`)
+    }
+  }
+  if (!linked) {
+    // ⚠️ 这次必须真的报错退出 —— 原来只打一行警告就继续，
+    //   结果 package.json 里登记了但模块不存在 → DSH 跳过整个 bundle →
+    //   **设置页整节消失**，而脚本还说"装好了" ✗
+    console.error('  [X] 插件装好了，但没有链进 profile —— DSH 会加载不到它')
+    console.error('      请手动把 ' + target + ' 链接到 ' + linkPath)
+    process.exit(1)
+  }
+
+// ⚠️⚠️ 2026-11-08（独立使用自检抓到的第二个问题）：
+//   core 的 node_modules 链接**从来没建过** ——
+//   只靠插件启动时自己挂一次兜底，profile 里找不到 dsh-whale-core 模块 ✗
+//   现在一起链上（core 就在 plugins/…/core，链接指向它）✓
 try {
-  fs.rmSync(linkPath, { recursive: true, force: true })
-  if (process.platform === 'win32') execFileSync('cmd', ['/c', 'mklink', '/J', linkPath, target], { stdio: 'pipe' })
-  else fs.symlinkSync(target, linkPath, 'junction')
-  say('        链接：' + linkPath)
-} catch (e) {
-  say('        [!] 建链接失败：' + e.message)
-}
+  const coreLink = path.join(PROFILE_DIR, 'node_modules', CORE_PKG)
+  const coreSrc = path.join(target, 'core')
+  if (fs.existsSync(coreSrc)) {
+    fs.mkdirSync(path.dirname(coreLink), { recursive: true })
+    try { if (fs.existsSync(coreLink)) fs.rmSync(coreLink, { recursive: true, force: true }) } catch { /* */ }
+    try {
+      fs.symlinkSync(coreSrc, coreLink, 'junction')
+      say(`        链接好了：${CORE_PKG}`)
+    } catch {
+      try { fs.cpSync(coreSrc, coreLink, { recursive: true }); say(`        没有链接权限，拷了一份：${CORE_PKG}`) } catch { /* */ }
+    }
+  }
+} catch { /* core 链接失败不影响插件本体（插件会自己挂） */ }
 
 } // ← 结束「!NAPCAT_ONLY」那一段（插件本体装完了）
 
@@ -218,7 +292,11 @@ try {
 //   · 已经装过（C:\NapCat\app\node.exe 在）→ 只修配置，不重新下载
 //   · Windows 自动装；其它系统给出提示（NapCat 目前只有 Windows shell 版好用）
 //   · 装不上**不算失败** —— 插件本身照样能用，只是扫码之前得自己装 NapCat
-const NAPCAT_DIR = process.env.NAPCAT_HOME || path.join(path.parse(process.cwd()).root, 'NapCat')
+// ⚠️ 2026-11-04 晚（代码审查抓到）：原来装在「当前盘符的根目录」，
+//   用户从 D 盘运行就装到 D:\NapCat，而插件 ensureNapcat() 找的是 C:\NapCat →
+//   **装好了但插件永远找不到它** ✗（表现为"连不上 NapCat WebUI"）
+//   现在：两边都用 C:\NapCat（可用 NAPCAT_HOME 覆盖），插件侧读同一个变量 ✓
+const NAPCAT_DIR = process.env.NAPCAT_HOME || 'C:\\NapCat'
 const NAPCAT_VER = 'v4.18.42'
 const NAPCAT_ZIP = 'NapCat.Shell.Windows.Node.zip'
 const NAPCAT_URL = `https://github.com/NapNeko/NapCatQQ/releases/download/${NAPCAT_VER}/${NAPCAT_ZIP}`
@@ -275,14 +353,29 @@ function writeNapcatConfig() {
     parseMultMsg: false,
   })
   // 启动脚本：**必须带 NAPCAT_WEBUI_SECRET_KEY**，否则密码又被换掉
-  fs.writeFileSync(path.join(NAPCAT_DIR, 'start-napcat.bat'), [
-    '@echo off',
-    'setlocal',
-    `cd /d "${NAPCAT_DIR}\\app"`,
-    `set NAPCAT_WEBUI_SECRET_KEY=${WEBUI_TOKEN}`,
-    `"${NAPCAT_DIR}\\app\\node.exe" "${NAPCAT_DIR}\\app\\index.js" %*`,
-    '',
-  ].join('\r\n'), 'ascii')
+  //
+  // ⚠️ 2026-11-04 晚（主人：「我重启了，你是不是在耍我」）：
+  //   这里原来**每次都无条件覆盖** start-napcat.bat。
+  //   而那个文件里有自动重启循环（NapCat 偶尔起来就退出，没循环就一直是死的）——
+  //   我一跑 install.mjs 就把它覆盖成"跑一次就结束"的简版 ✗
+  //   于是重启后 NapCat 起不来，界面上就是「连不上 NapCat WebUI」。
+  //
+  //   现在：**已经有就不动它**（用户手里的那份可能被改过、有循环）；
+  //         没有才生成，而且生成的版本自带重试 ✓
+  const batFile = path.join(NAPCAT_DIR, 'start-napcat.bat')
+  if (!fs.existsSync(batFile)) {
+    fs.writeFileSync(batFile, [
+      '@echo off',
+      'setlocal',
+      `cd /d "${NAPCAT_DIR}\\app"`,
+      `set NAPCAT_WEBUI_SECRET_KEY=${WEBUI_TOKEN}`,
+      // 循环：NapCat 偶尔启动即退出，没重试就一直是死的
+      ':loop',
+      `"${NAPCAT_DIR}\\app\\node.exe" "${NAPCAT_DIR}\\app\\index.js" %*`,
+      'if errorlevel 1 timeout /t 5 /nobreak >nul & goto loop',
+      '',
+    ].join('\r\n'), 'ascii')
+  }
 }
 
 async function setupNapcat() {
@@ -303,55 +396,24 @@ async function setupNapcat() {
     return { ok: true, reused: true }
   }
 
-  // 拿到 NapCat 的 zip（约 118 MB）
-  //
-  // ⚠️ 2026-11-04 晚（主人：「napcat 的安装包也放里面」）：
-  //   原来是**只能**从 GitHub 下 —— 国内经常连不上，整个安装就卡在这 ✗
-  //   现在优先用包里的离线副本：
-  //     · 先看 <安装包>/_offline/NapCat.Shell.Windows.Node.zip
-  //     · 再看 <插件目录>/_offline/ 下同名的
-  //     · 都没有才去 GitHub 下
-  //   这样离线也能装完（除了最后扫码要联网）✓
-  const offlineCandidates = [
-    path.join(HERE, '..', '_offline', NAPCAT_ZIP),   // 安装包根目录
-    path.join(HERE, '_offline', NAPCAT_ZIP),          // 插件目录里
-    path.join(process.cwd(), '_offline', NAPCAT_ZIP),
-  ]
-  let localZip = null
-  for (const c of offlineCandidates) {
-    try {
-      if (fs.existsSync(c) && fs.statSync(c).size > 50_000_000) { localZip = c; break }
-    } catch { /* 往下试 */ }
-  }
-
+  // 下载（约 118 MB）
+  say(`        下载 NapCat ${NAPCAT_VER}（约 118 MB，慢的话等一会儿）…`)
   fs.mkdirSync(NAPCAT_DIR, { recursive: true })
   const zipPath = path.join(NAPCAT_DIR, NAPCAT_ZIP)
-
-  if (localZip) {
-    say(`        用包里的离线副本（${(fs.statSync(localZip).size / 1024 / 1024).toFixed(0)} MB）`)
-    try {
-      fs.copyFileSync(localZip, zipPath)
-      say('        拷好了（不用联网）')
-    } catch (e) {
-      say('        [!] 拷离线包失败：' + String(e?.message ?? e).slice(0, 100))
-      return { ok: false, reason: '离线包拷贝失败' }
-    }
-  } else {
-    say(`        包里没有离线副本 → 从 GitHub 下载 NapCat ${NAPCAT_VER}（约 118 MB，慢的话等一会儿）…`)
-    try {
-      execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${NAPCAT_URL}' -OutFile '${zipPath}' -UseBasicParsing;` +
-        `if ((Get-Item '${zipPath}').Length -lt 50000000) { throw 'download incomplete' }`,
-      ], { stdio: 'pipe' })
-      say('        下载完成')
-    } catch (e) {
-      say('        [!] 下载失败（GitHub 连不上 / 磁盘不够）')
-      say('            插件已经装好了，NapCat 可以稍后再装。就地重试：')
-      say('')
-      say('              node install.mjs --napcat-only')
-      say('')
-      return { ok: false, reason: '下载失败' }
-    }
+  try {
+    execFileSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+      `$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '${NAPCAT_URL}' -OutFile '${zipPath}' -UseBasicParsing;` +
+      `if ((Get-Item '${zipPath}').Length -lt 50000000) { throw 'download incomplete' }`,
+    ], { stdio: 'pipe' })
+    say('        下载完成')
+  } catch (e) {
+    say('        [!] 下载失败（GitHub 连不上 / 磁盘不够）')
+    say('            插件已经装好了，NapCat 可以稍后再装。就地重试：')
+    say('')
+    say('              node install.mjs --napcat-only')
+    say('')
+    say('            （不需要再下载别的东西，本仓库里就有）')
+    return { ok: false, reason: '下载失败' }
   }
 
   // 解压
