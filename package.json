@@ -41,9 +41,6 @@
       "platform": "web"
     }
   },
-  "peerDependencies": {
-    "dsh-whale-core": ">=0.1.0"
-  },
   "license": "MIT",
   "dependencies": {
     "qrcode": "1.5.4"

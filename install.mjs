@@ -138,19 +138,33 @@ if (missingDeps.length) {
 
 if (missingDeps.length) {
   say('  [2.5] 装依赖：' + missingDeps.join(', ') + ' ...')
+  // ⚠️ 2026-11-04 晚（代码审查 + 实测）：新用户装依赖**必失败**，两个原因：
+  //   ① package.json 里原来有 peerDependencies.dsh-whale-core ——
+  //      npm 上没有这个包，三个 runner 全 404 ✗（那条声明已删）
+  //   ② shell:true 让 npm 走 cmd.exe，**中文/空格路径**被 8.3 短名 + GBK
+  //      重新编码 → ENOENT ...\package.json ✗
+  //      本机 HOME 就是「ZhuanZ（无密码）」，正是会中招的路径。
+  //   现在：不用 shell（Windows 上直接调 npm.cmd）+ --legacy-peer-deps 兜底 ✓
+  const isWin = process.platform === 'win32'
   const runners = [
-    { cmd: 'npm', args: ['install', '--omit=dev', '--no-audit', '--no-fund'] },
-    { cmd: 'pnpm', args: ['install', '--prod'] },
-    { cmd: 'corepack', args: ['npm', 'install', '--omit=dev'] },
+    { cmd: isWin ? 'npm.cmd' : 'npm', args: ['install', '--omit=dev', '--no-audit', '--no-fund', '--legacy-peer-deps'] },
+    { cmd: isWin ? 'pnpm.cmd' : 'pnpm', args: ['install', '--prod'] },
+    { cmd: isWin ? 'corepack.cmd' : 'corepack', args: ['npm', 'install', '--omit=dev', '--legacy-peer-deps'] },
   ]
   let ok = false
   let tried = []
   for (const r of runners) {
     try {
-      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', shell: true, timeout: 180000 })
+      execFileSync(r.cmd, r.args, { cwd: target, stdio: 'inherit', timeout: 180000 })
       ok = true
       break
-    } catch (e) { tried.push(r.cmd) }
+    } catch (e) {
+      tried.push(r.cmd)
+      // 把真实错误说出来 —— 原来只记命令名，用户完全不知道为啥失败
+      const msg = String(e?.stderr ?? e?.message ?? '')
+        .split(/\r?\n/).filter((l) => /error|404|ENOENT/i.test(l)).slice(0, 2).join(' | ')
+      if (msg) say('        ' + r.cmd + ' 失败：' + msg.slice(0, 160))
+    }
   }
   if (!ok) {
     console.error('')
@@ -197,14 +211,38 @@ say('  [3/3] 已登记到 profile bundles  ✓')
 
 const linkPath = path.join(PROFILE_DIR, 'node_modules', PKG)
 fs.mkdirSync(path.dirname(linkPath), { recursive: true })
-try {
-  fs.rmSync(linkPath, { recursive: true, force: true })
-  if (process.platform === 'win32') execFileSync('cmd', ['/c', 'mklink', '/J', linkPath, target], { stdio: 'pipe' })
-  else fs.symlinkSync(target, linkPath, 'junction')
-  say('        链接：' + linkPath)
-} catch (e) {
-  say('        [!] 建链接失败：' + e.message)
-}
+  // ⚠️ 2026-11-04 晚（代码审查 + 实测）：原来用 execFileSync('cmd', ['/c','mklink','/J', ...])
+  //   参数是**用空格拼起来**交给 cmd 的，路径一带空格就被拆成多个参数 ✗
+  //   本机 HOME「ZhuanZ（无密码）」里就有空格 —— 必然踩。
+  //   改用 Node 原生 symlinkSync：Windows 上指定 'junction' 不需要管理员，
+  //   而且完全不经过 cmd 的参数解析 ✓
+  let linked = false
+  try {
+    fs.mkdirSync(path.dirname(linkPath), { recursive: true })
+    if (fs.existsSync(linkPath)) {
+      try { fs.rmSync(linkPath, { recursive: true, force: true }) } catch { /* */ }
+    }
+    fs.symlinkSync(target, linkPath, 'junction')
+    linked = true
+    say(`        链接好了：${path.basename(linkPath)}`)
+  } catch (e) {
+    // 没有权限建链接 → 直接拷一份（慢一点，但能跑）
+    try {
+      fs.cpSync(target, linkPath, { recursive: true })
+      linked = true
+      say(`        没有建链接权限，改成直接拷了一份：${path.basename(linkPath)}`)
+    } catch (e2) {
+      say(`        [!] 链接失败：${String(e2?.message ?? e2).slice(0, 120)}`)
+    }
+  }
+  if (!linked) {
+    // ⚠️ 这次必须真的报错退出 —— 原来只打一行警告就继续，
+    //   结果 package.json 里登记了但模块不存在 → DSH 跳过整个 bundle →
+    //   **设置页整节消失**，而脚本还说"装好了" ✗
+    console.error('  [X] 插件装好了，但没有链进 profile —— DSH 会加载不到它')
+    console.error('      请手动把 ' + target + ' 链接到 ' + linkPath)
+    process.exit(1)
+  }
 
 } // ← 结束「!NAPCAT_ONLY」那一段（插件本体装完了）
 
@@ -218,7 +256,11 @@ try {
 //   · 已经装过（C:\NapCat\app\node.exe 在）→ 只修配置，不重新下载
 //   · Windows 自动装；其它系统给出提示（NapCat 目前只有 Windows shell 版好用）
 //   · 装不上**不算失败** —— 插件本身照样能用，只是扫码之前得自己装 NapCat
-const NAPCAT_DIR = process.env.NAPCAT_HOME || path.join(path.parse(process.cwd()).root, 'NapCat')
+// ⚠️ 2026-11-04 晚（代码审查抓到）：原来装在「当前盘符的根目录」，
+//   用户从 D 盘运行就装到 D:\NapCat，而插件 ensureNapcat() 找的是 C:\NapCat →
+//   **装好了但插件永远找不到它** ✗（表现为"连不上 NapCat WebUI"）
+//   现在：两边都用 C:\NapCat（可用 NAPCAT_HOME 覆盖），插件侧读同一个变量 ✓
+const NAPCAT_DIR = process.env.NAPCAT_HOME || 'C:\\NapCat'
 const NAPCAT_VER = 'v4.18.42'
 const NAPCAT_ZIP = 'NapCat.Shell.Windows.Node.zip'
 const NAPCAT_URL = `https://github.com/NapNeko/NapCatQQ/releases/download/${NAPCAT_VER}/${NAPCAT_ZIP}`
