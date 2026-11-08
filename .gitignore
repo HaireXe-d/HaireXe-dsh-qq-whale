@@ -1,6 +1,15 @@
-﻿node_modules/
+node_modules/
 *.log
 .DS_Store
 Thumbs.db
 Microsoft/
+
+# 调试遗留：绝不进发布
+*.bak
 *.bak-*
+*.bak.*
+*.orig
+*-new.js
+*-old.js
+*-copy.js
+*.tmp
