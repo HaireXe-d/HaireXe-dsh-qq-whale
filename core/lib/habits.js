@@ -125,10 +125,30 @@ export function normalizeHabits(raw = {}) {
 
 /**
  * 读「她的习惯」。文件不存在就用默认（**不自动写** —— 读操作不该有副作用）。
+ *
+ * 2026-11-08 修（主人：「独立配置QQ的时候找不到一个醒的时间」）：
+ *
+ *   原来这里是：
+ *       const raw = readJsonSafe(habitsFile(dshHome))
+ *       return normalizeHabits(raw ?? {})
+ *
+ *   也就是说：**没有 whale-habits.json 时，直接返回写死的默认值** ——
+ *   完全不管用户在自己通道配置里写了什么 ✗
+ *
+ *   后果（独立装 QQ 的人必中）：
+ *     ① 在控制台把作息改成 10:00-12:00、21:00-23:00 → 存进 qq.json ✓
+ *     ② readHabits 读不到共享文件 → 返回默认那三个窗
+ *     ③ applyHabits 用这三个窗覆盖 → 用户改的全没了
+ *   表现就是「找不到我想设的醒来时间」，改了也没用、也看不出原因。
+ *
+ *   现在：没有共享文件时，用调用方给的 fallback（本通道自己的配置）
+ *   作为来源，而不是凭空造默认值 ✓
  */
-export function readHabits({ dshHome } = {}) {
+export function readHabits({ dshHome, fallback = null } = {}) {
   const raw = readJsonSafe(habitsFile(dshHome))
-  return normalizeHabits(raw ?? {})
+  if (raw) return normalizeHabits(raw)
+  if (fallback && typeof fallback === 'object') return normalizeHabits(fallback)
+  return normalizeHabits({})
 }
 
 /**
