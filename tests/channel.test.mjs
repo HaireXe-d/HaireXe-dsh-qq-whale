@@ -69,6 +69,8 @@ test('路由表声明了 status / test / poke', () => {
     'GET /status',
     'GET /stickers',
     'GET /voice/check',
+    // ⚠️ 2026-11-08：试听音频要**流给浏览器**（不然前端放不出声）
+    'GET /voice/preview/audio',
     'POST /accounts/refresh',
     'POST /auth/qr/cancel',
     'POST /auth/qr/poll',
